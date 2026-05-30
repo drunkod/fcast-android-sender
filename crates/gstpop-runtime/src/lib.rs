@@ -13,7 +13,7 @@ mod protocol_tests;
 
 pub use client::GstPopClient;
 pub use embedded::{
-    embedded_status, is_localhost, start_embedded, stop_embedded, url_port, EmbeddedState,
-    EmbeddedStatus,
+    embedded_status, is_localhost, start_embedded, start_embedded_with_config,
+    stop_embedded, url_port, EmbeddedConfig, EmbeddedState, EmbeddedStatus,
 };
 pub use protocol::{classify, ClassifiedFrame, Event, Request, Response};
