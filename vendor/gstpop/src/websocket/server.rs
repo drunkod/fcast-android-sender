@@ -87,6 +87,9 @@ impl WebSocketServer {
         self.dropped_events.load(Ordering::Relaxed)
     }
 
+    // === ANDROID DIVERGENCE FROM UPSTREAM ===
+    // Listener is bound by the caller (server.rs) so bind failures surface
+    // synchronously. Upstream signature is `run(self, event_rx)`; do not revert.
     pub async fn run(self, listener: TcpListener, mut event_rx: EventReceiver) -> Result<()> {
         info!("WebSocket server listening on ws://{}", self.addr);
 
