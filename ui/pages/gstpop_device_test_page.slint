@@ -1,0 +1,368 @@
+// ui/pages/gstpop_device_test_page.slint — On-device gstpop daemon test panel.
+//
+// Exercises the full embedded-server lifecycle on a real device:
+//   daemon start → create pipeline → play → pause → stop → remove → daemon stop
+//
+// Navigation: Debug panel → "gstpop Daemon Test" button
+// Bridge state: Bridge.gstpop-dt-* (see docs/gstpop-android-mvp-plan/step-14-device-daemon-test.md)
+
+import { ScrollView, LineEdit } from "std-widgets.slint";
+import { Bridge } from "../bridge.slint";
+import { PanelBridge } from "../state/panel_bridge.slint";
+import { Theme } from "../theme.slint";
+import { PrimaryButton, DestructiveButton, TextButton } from "../components/buttons.slint";
+import { PanelHeader, Card } from "../components/panel_chrome.slint";
+import { SettingsSection } from "../components/settings_rows.slint";
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal: coloured state dot
+// ─────────────────────────────────────────────────────────────────────────────
+component StateDot inherits Rectangle {
+    in property <string> state: "stopped";
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background:
+        root.state == "running"  ? Theme.success   :
+        root.state == "starting" ? Theme.warning    :
+        root.state == "error"    ? Theme.error-fg   :
+        Theme.text-disabled;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal: single log line
+// ─────────────────────────────────────────────────────────────────────────────
+component LogLine inherits Text {
+    in property <string> level: "info";   // "info" | "ok" | "warn" | "error"
+    font-size: Theme.font-size-label;
+    wrap: word-wrap;
+    color:
+        root.level == "ok"    ? Theme.success  :
+        root.level == "warn"  ? Theme.warning  :
+        root.level == "error" ? Theme.error-fg :
+        Theme.text-secondary;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal: result row (label + value)
+// ─────────────────────────────────────────────────────────────────────────────
+component ResultRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <string> value-color: "normal";  // "normal"|"ok"|"error"
+    spacing: 8px;
+    min-height: 28px;
+
+    Text {
+        text: root.label;
+        color: Theme.text-secondary;
+        font-size: Theme.font-size-label;
+        width: 120px;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.value;
+        color:
+            root.value-color == "ok"    ? Theme.success  :
+            root.value-color == "error" ? Theme.error-fg :
+            Theme.text-primary;
+        font-size: Theme.font-size-label;
+        horizontal-stretch: 1;
+        vertical-alignment: center;
+        wrap: word-wrap;
+    }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Exported: GstPopDeviceTestPage
+// ─────────────────────────────────────────────────────────────────────────────
+export component GstPopDeviceTestPage inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: Theme.surface-primary;
+
+    forward-focus: scope;
+    scope := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape { PanelBridge.pop(); return accept; }
+            return reject;
+        }
+
+    VerticalLayout {
+
+        // ── Header ────────────────────────────────────────────────────────
+        PanelHeader {
+            title: @tr("gstpop Daemon Test");
+            close-clicked => { PanelBridge.pop(); }
+        }
+
+        // ── Scrollable body ───────────────────────────────────────────────
+        ScrollView {
+            mouse-drag-pan-enabled: true;
+
+            VerticalLayout {
+                alignment: start;
+                spacing: Theme.spacing-default;
+                padding: Theme.padding-screen;
+
+                // ── DAEMON STATUS ─────────────────────────────────────────
+                SettingsSection {
+                    title: @tr("DAEMON STATUS");
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: daemon-layout.preferred-height;
+
+                        daemon-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
+                            spacing: 8px;
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                StateDot {
+                                    state: Bridge.gstpop-dt-daemon-state;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                                Text {
+                                    text:
+                                        Bridge.gstpop-dt-daemon-state == "running"  ? @tr("Running") :
+                                        Bridge.gstpop-dt-daemon-state == "starting" ? @tr("Starting\u{2026}") :
+                                        Bridge.gstpop-dt-daemon-state == "error"    ? @tr("Error") :
+                                                                                      @tr("Stopped");
+                                    color: Theme.text-primary;
+                                    font-size: Theme.font-size-body;
+                                    horizontal-stretch: 1;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            ResultRow {
+                                label: @tr("Bind address");
+                                value: Bridge.gstpop-dt-daemon-bind != ""
+                                    ? Bridge.gstpop-dt-daemon-bind
+                                    : @tr("—");
+                            }
+                            ResultRow {
+                                label: @tr("Port");
+                                value: Bridge.gstpop-dt-daemon-port > 0
+                                    ? Bridge.gstpop-dt-daemon-port
+                                    : @tr("—");
+                            }
+                            ResultRow {
+                                label: @tr("Externally owned");
+                                value: Bridge.gstpop-dt-daemon-external
+                                    ? @tr("Yes")
+                                    : @tr("No");
+                            }
+
+                            if Bridge.gstpop-dt-daemon-last-error != "": ResultRow {
+                                label: @tr("Last error");
+                                value: Bridge.gstpop-dt-daemon-last-error;
+                                value-color: "error";
+                            }
+                        }
+                    }
+                }
+
+                // ── PIPELINE DESCRIPTION INPUT ────────────────────────────
+                SettingsSection {
+                    title: @tr("PIPELINE");
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: pipeline-layout.preferred-height;
+
+                        pipeline-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
+                            spacing: 8px;
+
+                            Text {
+                                text: @tr("GStreamer launch description");
+                                color: Theme.text-secondary;
+                                font-size: Theme.font-size-label;
+                            }
+                            LineEdit {
+                                text <=> Bridge.gstpop-dt-pipeline-desc;
+                                placeholder-text: "videotestsrc ! fakesink";
+                            }
+
+                            if Bridge.gstpop-dt-pipeline-id != "": ResultRow {
+                                label: @tr("Pipeline ID");
+                                value: Bridge.gstpop-dt-pipeline-id;
+                                value-color: "ok";
+                            }
+
+                            ResultRow {
+                                label: @tr("State");
+                                value: Bridge.gstpop-dt-pipeline-state != ""
+                                    ? Bridge.gstpop-dt-pipeline-state
+                                    : @tr("—");
+                                value-color:
+                                    Bridge.gstpop-dt-pipeline-state == "playing" ? "ok" :
+                                    Bridge.gstpop-dt-pipeline-state == "error"   ? "error" :
+                                    "normal";
+                            }
+                        }
+                    }
+                }
+
+                // ── ACTIONS ───────────────────────────────────────────────
+                SettingsSection {
+                    title: @tr("ACTIONS");
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: actions-layout.preferred-height;
+
+                        actions-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
+                            spacing: 8px;
+
+                            // Row 1: daemon lifecycle
+                            HorizontalLayout {
+                                spacing: 8px;
+                                PrimaryButton {
+                                    label: @tr("Start daemon");
+                                    enabled: Bridge.gstpop-dt-daemon-state == "stopped"
+                                          || Bridge.gstpop-dt-daemon-state == "error";
+                                    clicked => { Bridge.gstpop-dt-start-daemon(); }
+                                    horizontal-stretch: 1;
+                                }
+                                DestructiveButton {
+                                    label: @tr("Stop daemon");
+                                    enabled: Bridge.gstpop-dt-daemon-state == "running";
+                                    clicked => { Bridge.gstpop-dt-stop-daemon(); }
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            // Row 2: pipeline lifecycle
+                            HorizontalLayout {
+                                spacing: 8px;
+                                PrimaryButton {
+                                    label: @tr("Create");
+                                    enabled: Bridge.gstpop-dt-daemon-state == "running"
+                                          && Bridge.gstpop-dt-pipeline-id == "";
+                                    clicked => { Bridge.gstpop-dt-create-pipeline(); }
+                                    horizontal-stretch: 1;
+                                }
+                                DestructiveButton {
+                                    label: @tr("Remove");
+                                    enabled: Bridge.gstpop-dt-pipeline-id != "";
+                                    clicked => { Bridge.gstpop-dt-remove-pipeline(); }
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            // Row 3: playback control
+                            HorizontalLayout {
+                                spacing: 8px;
+                                PrimaryButton {
+                                    label: @tr("Play");
+                                    enabled: Bridge.gstpop-dt-pipeline-id != ""
+                                          && Bridge.gstpop-dt-pipeline-state != "playing";
+                                    clicked => { Bridge.gstpop-dt-play(); }
+                                    horizontal-stretch: 1;
+                                }
+                                TextButton {
+                                    label: @tr("Pause");
+                                    enabled: Bridge.gstpop-dt-pipeline-state == "playing";
+                                    clicked => { Bridge.gstpop-dt-pause(); }
+                                    horizontal-stretch: 1;
+                                }
+                                DestructiveButton {
+                                    label: @tr("Stop");
+                                    enabled: Bridge.gstpop-dt-pipeline-state == "playing"
+                                          || Bridge.gstpop-dt-pipeline-state == "paused";
+                                    clicked => { Bridge.gstpop-dt-stop-pipeline(); }
+                                    horizontal-stretch: 1;
+                                }
+                            }
+
+                            // Full-lifecycle shortcut
+                            PrimaryButton {
+                                label: @tr("Run full lifecycle test");
+                                enabled: Bridge.gstpop-dt-daemon-state == "running"
+                                      && !Bridge.gstpop-dt-test-running;
+                                clicked => { Bridge.gstpop-dt-run-full-test(); }
+                                horizontal-stretch: 1;
+                            }
+                        }
+                    }
+                }
+
+                // ── EVENT LOG ─────────────────────────────────────────────
+                SettingsSection {
+                    title: @tr("EVENT LOG");
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: event-log-layout.preferred-height;
+
+                        event-log-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
+                            spacing: 4px;
+
+                            HorizontalLayout {
+                                Text {
+                                    text: @tr("Recent events (newest first)");
+                                    color: Theme.text-secondary;
+                                    font-size: Theme.font-size-label;
+                                    horizontal-stretch: 1;
+                                }
+                                TextButton {
+                                    label: @tr("Clear");
+                                    clicked => { Bridge.gstpop-dt-clear-log(); }
+                                }
+                            }
+
+                            if Bridge.gstpop-dt-log-line-0 != "": LogLine { text: Bridge.gstpop-dt-log-line-0; level: Bridge.gstpop-dt-log-level-0; }
+                            if Bridge.gstpop-dt-log-line-1 != "": LogLine { text: Bridge.gstpop-dt-log-line-1; level: Bridge.gstpop-dt-log-level-1; }
+                            if Bridge.gstpop-dt-log-line-2 != "": LogLine { text: Bridge.gstpop-dt-log-line-2; level: Bridge.gstpop-dt-log-level-2; }
+                            if Bridge.gstpop-dt-log-line-3 != "": LogLine { text: Bridge.gstpop-dt-log-line-3; level: Bridge.gstpop-dt-log-level-3; }
+                            if Bridge.gstpop-dt-log-line-4 != "": LogLine { text: Bridge.gstpop-dt-log-line-4; level: Bridge.gstpop-dt-log-level-4; }
+                            if Bridge.gstpop-dt-log-line-5 != "": LogLine { text: Bridge.gstpop-dt-log-line-5; level: Bridge.gstpop-dt-log-level-5; }
+                            if Bridge.gstpop-dt-log-line-6 != "": LogLine { text: Bridge.gstpop-dt-log-line-6; level: Bridge.gstpop-dt-log-level-6; }
+                            if Bridge.gstpop-dt-log-line-7 != "": LogLine { text: Bridge.gstpop-dt-log-line-7; level: Bridge.gstpop-dt-log-level-7; }
+
+                            if Bridge.gstpop-dt-log-line-0 == "": Text {
+                                text: @tr("No events yet. Start the daemon and run actions.");
+                                color: Theme.text-disabled;
+                                font-size: Theme.font-size-label;
+                                horizontal-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // ── FULL TEST RESULT ──────────────────────────────────────
+                if Bridge.gstpop-dt-test-result != "": SettingsSection {
+                    title: @tr("LAST FULL TEST");
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: test-result-layout.preferred-height;
+
+                        test-result-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
+                            spacing: 4px;
+                            Text {
+                                text: Bridge.gstpop-dt-test-result;
+                                color: Bridge.gstpop-dt-test-passed ? Theme.success : Theme.error-fg;
+                                font-size: Theme.font-size-body;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { height: 48px; background: transparent; }
+            }
+        }
+    }
+    }  // FocusScope
+}

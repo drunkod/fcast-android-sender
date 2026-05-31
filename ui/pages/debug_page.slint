@@ -47,6 +47,11 @@ component DebugPageInner inherits VerticalBox {
         clicked => { Bridge.invoke-action("test-smoke"); }
     }
 
+    PrimaryButton {
+        label: @tr("gstpop Daemon Test");
+        clicked => { PanelBridge.push(Panel.gstpop-device-test); }
+    }
+
     // Scrollable test-status log.
     // viewport-width uses root.width (the DebugPage/VerticalBox root element)
     // which is equivalent to the original `parent.width` that referred to the

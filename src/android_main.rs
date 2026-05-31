@@ -1185,6 +1185,281 @@ fn android_main(app: PlatformApp) {
         log::info!("pick-test-overlay-image: stub — file picker not yet implemented");
     });
 
+    // ── gstpop device-test panel callbacks (Step 14 Part B) ──────────────────────────
+    ui.global::<Bridge>().on_gstpop_dt_start_daemon({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            tokio::spawn(async move {
+                push_log_helper(&ui, "Starting embedded daemon...", "info");
+                let status = gstpop_runtime::start_embedded(9000).await;
+                update_daemon_status_helper(&ui, status.clone());
+                let level = if status.state == gstpop_runtime::EmbeddedState::Running { "ok" } else { "error" };
+                push_log_helper(&ui, &format!("Daemon state: {:?}", status.state), level);
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_gstpop_dt_stop_daemon({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            tokio::spawn(async move {
+                push_log_helper(&ui, "Stopping embedded daemon...", "info");
+                let status = gstpop_runtime::stop_embedded().await;
+                update_daemon_status_helper(&ui, status.clone());
+                push_log_helper(&ui, &format!("Daemon state: {:?}", status.state), "info");
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_gstpop_dt_create_pipeline({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            let (desc, port) = if let Some(ui_up) = ui.upgrade() {
+                (
+                    ui_up.global::<Bridge>().get_gstpop_dt_pipeline_desc().to_string(),
+                    ui_up.global::<Bridge>().get_gstpop_dt_daemon_port(),
+                )
+            } else {
+                return;
+            };
+
+            tokio::spawn(async move {
+                push_log_helper(&ui, &format!("Creating pipeline: {}", desc), "info");
+                let url = format!("ws://127.0.0.1:{}/", port);
+                match gstpop_runtime::GstPopClient::connect(&url, None).await {
+                    Ok(client_inner) => {
+                        let client = gstpop_runtime::TypedGstPopClient::new(client_inner);
+                        match client.create_pipeline(&desc).await {
+                            Ok(pid) => {
+                                push_log_helper(&ui, &format!("✓ Pipeline created: {}", pid), "ok");
+                                let pid_clone = pid.clone();
+                                let _ = ui.upgrade_in_event_loop(move |ui| {
+                                    let b = ui.global::<Bridge>();
+                                    b.set_gstpop_dt_pipeline_id(pid_clone.into());
+                                    b.set_gstpop_dt_pipeline_state("created".into());
+                                });
+                            }
+                            Err(e) => {
+                                push_log_helper(&ui, &format!("✗ Create pipeline failed: {:#}", e), "error");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        push_log_helper(&ui, &format!("✗ Client connect failed: {:#}", e), "error");
+                    }
+                }
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_gstpop_dt_remove_pipeline({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            let (pid, port) = if let Some(ui_up) = ui.upgrade() {
+                (
+                    ui_up.global::<Bridge>().get_gstpop_dt_pipeline_id().to_string(),
+                    ui_up.global::<Bridge>().get_gstpop_dt_daemon_port(),
+                )
+            } else {
+                return;
+            };
+
+            if pid.is_empty() {
+                push_log_helper(&ui, "No active pipeline to remove", "warn");
+                return;
+            }
+
+            tokio::spawn(async move {
+                push_log_helper(&ui, &format!("Removing pipeline: {}", pid), "info");
+                let url = format!("ws://127.0.0.1:{}/", port);
+                match gstpop_runtime::GstPopClient::connect(&url, None).await {
+                    Ok(client_inner) => {
+                        let client = gstpop_runtime::TypedGstPopClient::new(client_inner);
+                        match client.remove_pipeline(&pid).await {
+                            Ok(()) => {
+                                push_log_helper(&ui, &format!("✓ Pipeline removed: {}", pid), "ok");
+                                let _ = ui.upgrade_in_event_loop(move |ui| {
+                                    let b = ui.global::<Bridge>();
+                                    b.set_gstpop_dt_pipeline_id("".into());
+                                    b.set_gstpop_dt_pipeline_state("".into());
+                                });
+                            }
+                            Err(e) => {
+                                push_log_helper(&ui, &format!("✗ Remove pipeline failed: {:#}", e), "error");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        push_log_helper(&ui, &format!("✗ Client connect failed: {:#}", e), "error");
+                    }
+                }
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_gstpop_dt_play({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            let (pid, port) = if let Some(ui_up) = ui.upgrade() {
+                (
+                    ui_up.global::<Bridge>().get_gstpop_dt_pipeline_id().to_string(),
+                    ui_up.global::<Bridge>().get_gstpop_dt_daemon_port(),
+                )
+            } else {
+                return;
+            };
+
+            if pid.is_empty() {
+                push_log_helper(&ui, "No active pipeline to play", "warn");
+                return;
+            }
+
+            tokio::spawn(async move {
+                push_log_helper(&ui, &format!("Playing pipeline: {}", pid), "info");
+                let url = format!("ws://127.0.0.1:{}/", port);
+                match gstpop_runtime::GstPopClient::connect(&url, None).await {
+                    Ok(client_inner) => {
+                        let client = gstpop_runtime::TypedGstPopClient::new(client_inner);
+                        match client.play(Some(&pid)).await {
+                            Ok(()) => {
+                                push_log_helper(&ui, &format!("✓ Playing: {}", pid), "ok");
+                                let _ = ui.upgrade_in_event_loop(move |ui| {
+                                    ui.global::<Bridge>().set_gstpop_dt_pipeline_state("playing".into());
+                                });
+                            }
+                            Err(e) => {
+                                push_log_helper(&ui, &format!("✗ Play failed: {:#}", e), "error");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        push_log_helper(&ui, &format!("✗ Client connect failed: {:#}", e), "error");
+                    }
+                }
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_gstpop_dt_pause({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            let (pid, port) = if let Some(ui_up) = ui.upgrade() {
+                (
+                    ui_up.global::<Bridge>().get_gstpop_dt_pipeline_id().to_string(),
+                    ui_up.global::<Bridge>().get_gstpop_dt_daemon_port(),
+                )
+            } else {
+                return;
+            };
+
+            if pid.is_empty() {
+                push_log_helper(&ui, "No active pipeline to pause", "warn");
+                return;
+            }
+
+            tokio::spawn(async move {
+                push_log_helper(&ui, &format!("Pausing pipeline: {}", pid), "info");
+                let url = format!("ws://127.0.0.1:{}/", port);
+                match gstpop_runtime::GstPopClient::connect(&url, None).await {
+                    Ok(client_inner) => {
+                        let client = gstpop_runtime::TypedGstPopClient::new(client_inner);
+                        match client.pause(Some(&pid)).await {
+                            Ok(()) => {
+                                push_log_helper(&ui, &format!("✓ Paused: {}", pid), "ok");
+                                let _ = ui.upgrade_in_event_loop(move |ui| {
+                                    ui.global::<Bridge>().set_gstpop_dt_pipeline_state("paused".into());
+                                });
+                            }
+                            Err(e) => {
+                                push_log_helper(&ui, &format!("✗ Pause failed: {:#}", e), "error");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        push_log_helper(&ui, &format!("✗ Client connect failed: {:#}", e), "error");
+                    }
+                }
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_gstpop_dt_stop_pipeline({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            let (pid, port) = if let Some(ui_up) = ui.upgrade() {
+                (
+                    ui_up.global::<Bridge>().get_gstpop_dt_pipeline_id().to_string(),
+                    ui_up.global::<Bridge>().get_gstpop_dt_daemon_port(),
+                )
+            } else {
+                return;
+            };
+
+            if pid.is_empty() {
+                push_log_helper(&ui, "No active pipeline to stop", "warn");
+                return;
+            }
+
+            tokio::spawn(async move {
+                push_log_helper(&ui, &format!("Stopping pipeline: {}", pid), "info");
+                let url = format!("ws://127.0.0.1:{}/", port);
+                match gstpop_runtime::GstPopClient::connect(&url, None).await {
+                    Ok(client_inner) => {
+                        let client = gstpop_runtime::TypedGstPopClient::new(client_inner);
+                        match client.stop(Some(&pid)).await {
+                            Ok(()) => {
+                                push_log_helper(&ui, &format!("✓ Stopped: {}", pid), "ok");
+                                let _ = ui.upgrade_in_event_loop(move |ui| {
+                                    ui.global::<Bridge>().set_gstpop_dt_pipeline_state("null".into());
+                                });
+                            }
+                            Err(e) => {
+                                push_log_helper(&ui, &format!("✗ Stop failed: {:#}", e), "error");
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        push_log_helper(&ui, &format!("✗ Client connect failed: {:#}", e), "error");
+                    }
+                }
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_gstpop_dt_run_full_test({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            tokio::spawn(async move {
+                run_full_lifecycle_test(ui).await;
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_gstpop_dt_clear_log({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                let bridge = ui.global::<Bridge>();
+                bridge.set_gstpop_dt_log_line_0("".into());
+                bridge.set_gstpop_dt_log_line_1("".into());
+                bridge.set_gstpop_dt_log_line_2("".into());
+                bridge.set_gstpop_dt_log_line_3("".into());
+                bridge.set_gstpop_dt_log_line_4("".into());
+                bridge.set_gstpop_dt_log_line_5("".into());
+                bridge.set_gstpop_dt_log_line_6("".into());
+                bridge.set_gstpop_dt_log_line_7("".into());
+            });
+        }
+    });
+
     let ui_weak = ui.as_weak();
 
     let event_tx_clone = event_tx.clone();
@@ -1214,3 +1489,165 @@ fn android_main(app: PlatformApp) {
 
     debug!("Finished");
 }
+
+fn push_log_helper(ui_weak: &slint::Weak<MainWindow>, msg: &str, level: &str) {
+    let msg = msg.to_string();
+    let level = level.to_string();
+    let _ = ui_weak.upgrade_in_event_loop(move |ui| {
+        let bridge = ui.global::<Bridge>();
+        
+        let l6 = bridge.get_gstpop_dt_log_line_6();
+        let lvl6 = bridge.get_gstpop_dt_log_level_6();
+        let l5 = bridge.get_gstpop_dt_log_line_5();
+        let lvl5 = bridge.get_gstpop_dt_log_level_5();
+        let l4 = bridge.get_gstpop_dt_log_line_4();
+        let lvl4 = bridge.get_gstpop_dt_log_level_4();
+        let l3 = bridge.get_gstpop_dt_log_line_3();
+        let lvl3 = bridge.get_gstpop_dt_log_level_3();
+        let l2 = bridge.get_gstpop_dt_log_line_2();
+        let lvl2 = bridge.get_gstpop_dt_log_level_2();
+        let l1 = bridge.get_gstpop_dt_log_line_1();
+        let lvl1 = bridge.get_gstpop_dt_log_level_1();
+        let l0 = bridge.get_gstpop_dt_log_line_0();
+        let lvl0 = bridge.get_gstpop_dt_log_level_0();
+
+        bridge.set_gstpop_dt_log_line_7(l6);
+        bridge.set_gstpop_dt_log_level_7(lvl6);
+        bridge.set_gstpop_dt_log_line_6(l5);
+        bridge.set_gstpop_dt_log_level_6(lvl5);
+        bridge.set_gstpop_dt_log_line_5(l4);
+        bridge.set_gstpop_dt_log_level_5(lvl4);
+        bridge.set_gstpop_dt_log_line_4(l3);
+        bridge.set_gstpop_dt_log_level_4(lvl3);
+        bridge.set_gstpop_dt_log_line_3(l2);
+        bridge.set_gstpop_dt_log_level_3(lvl2);
+        bridge.set_gstpop_dt_log_line_2(l1);
+        bridge.set_gstpop_dt_log_level_2(lvl1);
+        bridge.set_gstpop_dt_log_line_1(l0);
+        bridge.set_gstpop_dt_log_level_1(lvl0);
+
+        bridge.set_gstpop_dt_log_line_0(msg.into());
+        bridge.set_gstpop_dt_log_level_0(level.into());
+    });
+}
+
+fn update_daemon_status_helper(ui_weak: &slint::Weak<MainWindow>, status: gstpop_runtime::EmbeddedStatus) {
+    let state = format!("{:?}", status.state).to_lowercase();
+    let bind = status.bind;
+    let port = status.port as i32;
+    let external = status.externally_owned;
+    let last_error = status.last_error.unwrap_or_default();
+    let _ = ui_weak.upgrade_in_event_loop(move |ui| {
+        let bridge = ui.global::<Bridge>();
+        bridge.set_gstpop_dt_daemon_state(state.into());
+        bridge.set_gstpop_dt_daemon_bind(bind.into());
+        bridge.set_gstpop_dt_daemon_port(port);
+        bridge.set_gstpop_dt_daemon_external(external);
+        bridge.set_gstpop_dt_daemon_last_error(last_error.into());
+    });
+}
+
+async fn run_full_lifecycle_test(ui: slint::Weak<MainWindow>) {
+    use gstpop_runtime::{GstPopClient, TypedGstPopClient, EmbeddedState};
+
+    let set_prop_running = {
+        let ui = ui.clone();
+        move |running: bool, passed: bool, result: String| {
+            let _ = ui.upgrade_in_event_loop(move |ui| {
+                let b = ui.global::<Bridge>();
+                b.set_gstpop_dt_test_running(running);
+                b.set_gstpop_dt_test_passed(passed);
+                b.set_gstpop_dt_test_result(result.into());
+            });
+        }
+    };
+
+    set_prop_running(true, false, "".to_string());
+
+    macro_rules! step {
+        ($label:expr, $result:expr) => {{
+            match $result {
+                Ok(v) => {
+                    push_log_helper(&ui, &format!("✓ {}", $label), "ok");
+                    v
+                }
+                Err(e) => {
+                    let msg = format!("✗ {}: {e:#}", $label);
+                    push_log_helper(&ui, &msg, "error");
+                    set_prop_running(false, false, msg);
+                    return;
+                }
+            }
+        }};
+    }
+
+    // 1. Ensure daemon running
+    push_log_helper(&ui, "Starting embedded daemon...", "info");
+    let status = gstpop_runtime::start_embedded(9000).await;
+    update_daemon_status_helper(&ui, status.clone());
+    if !matches!(status.state, EmbeddedState::Running) {
+        let msg = format!("✗ Daemon failed to start: {:?}", status.last_error);
+        push_log_helper(&ui, &msg, "error");
+        set_prop_running(false, false, msg);
+        return;
+    }
+    push_log_helper(&ui, "✓ Daemon running", "ok");
+
+    // 2. Connect typed client
+    let url = format!("ws://127.0.0.1:{}/", status.port);
+    let inner = step!("Client connect", GstPopClient::connect(&url, None).await);
+    let client = TypedGstPopClient::new(inner);
+
+    // 3. Pipeline lifecycle
+    let desc = {
+        let mut d = "videotestsrc ! fakesink".to_string();
+        if let Some(ui_up) = ui.upgrade() {
+            d = ui_up.global::<Bridge>().get_gstpop_dt_pipeline_desc().to_string();
+        }
+        d
+    };
+    let pid = step!("create_pipeline", client.create_pipeline(&desc).await);
+    push_log_helper(&ui, &format!("  id={pid}"), "info");
+    
+    let pid_clone = pid.clone();
+    let _ = ui.upgrade_in_event_loop(move |ui| {
+        ui.global::<Bridge>().set_gstpop_dt_pipeline_id(pid_clone.into());
+    });
+
+    step!("play", client.play(Some(&pid)).await);
+    let _ = ui.upgrade_in_event_loop(move |ui| {
+        ui.global::<Bridge>().set_gstpop_dt_pipeline_state("playing".into());
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    step!("pause", client.pause(Some(&pid)).await);
+    let _ = ui.upgrade_in_event_loop(move |ui| {
+        ui.global::<Bridge>().set_gstpop_dt_pipeline_state("paused".into());
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    step!("stop",  client.stop(Some(&pid)).await);
+    let _ = ui.upgrade_in_event_loop(move |ui| {
+        ui.global::<Bridge>().set_gstpop_dt_pipeline_state("null".into());
+    });
+
+    step!("remove_pipeline", client.remove_pipeline(&pid).await);
+    let _ = ui.upgrade_in_event_loop(move |ui| {
+        let b = ui.global::<Bridge>();
+        b.set_gstpop_dt_pipeline_id("".into());
+        b.set_gstpop_dt_pipeline_state("".into());
+    });
+
+    let pipelines = step!("list_pipelines (empty)", client.list_pipelines().await);
+    if !pipelines.is_empty() {
+        let msg = format!("✗ list_pipelines: expected empty, got {} entries", pipelines.len());
+        push_log_helper(&ui, &msg, "error");
+        set_prop_running(false, false, msg);
+        return;
+    }
+
+    let result = "✓ All steps passed — daemon is healthy".to_string();
+    push_log_helper(&ui, &result, "ok");
+    set_prop_running(false, true, result);
+}
+

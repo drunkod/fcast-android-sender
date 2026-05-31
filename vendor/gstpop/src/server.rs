@@ -97,7 +97,16 @@ impl ServerHandle {
                 }
             };
 
-            // Pre-bind the listener before spawning so bind errors surface immediately.
+            // === ANDROID DIVERGENCE FROM UPSTREAM ===
+            // Do NOT remove during upstream sync without updating
+            // crates/gstpop-runtime/src/embedded.rs and docs/gstpop-android-mvp-plan/.
+            //
+            // Upstream `daemon/src/server.rs` lets `WebSocketServer::run` bind internally,
+            // which means a port-in-use error only manifests after the server task is
+            // already spawned and detached. On Android we need bind errors to bubble up
+            // synchronously to `EmbeddedStatus.last_error`, so we bind here and pass the
+            // listener into `run()`. See docs/deep-research-gstpop-demon.md §"What is
+            // already good in the target tree" for rationale.
             let listener = match tokio::net::TcpListener::bind(addr).await {
                 Ok(l) => l,
                 Err(e) => {
