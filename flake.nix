@@ -181,6 +181,7 @@
             ANDROID_NDK_ROOT = androidNdkRoot;
             ANDROID_NDK_HOME = androidNdkRoot;
             ANDROID_NDK = androidNdkRoot;
+            ANDROID_JAR = "${androidHome}/platforms/android-34/android.jar";
 
             shellHook = ''
               export GIO_EXTRA_MODULES="${pkgs.glib-networking}/lib/gio/modules"
