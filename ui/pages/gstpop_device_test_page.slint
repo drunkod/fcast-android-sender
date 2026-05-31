@@ -36,7 +36,7 @@ component StateDot inherits Rectangle {
 // ─────────────────────────────────────────────────────────────────────────────
 component LogLine inherits Text {
     in property <string> level: "info";   // "info" | "ok" | "warn" | "error"
-    font-size: 11px;
+    font-size: Theme.font-size-label;
     wrap: word-wrap;
     color:
         root.level == "ok"    ? Theme.success  :

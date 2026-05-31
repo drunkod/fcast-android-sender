@@ -100,6 +100,14 @@ jobs:
       - name: Run gst-pop backend tests
         run: cargo test backend::gstpop -- --include-ignored
 
+      - name: Run gstpop-runtime crate tests
+        # Covers the embedded daemon lifecycle, typed JSON-RPC client,
+        # protocol enums, and media URI/playbin helpers added in
+        # Steps 01–09 of the gstpop-android-mvp plan. Without this step
+        # the ~50 unit tests and integration tests in crates/gstpop-runtime/
+        # never run in CI.
+        run: cargo test -p gstpop-runtime --features "typed-client media-tools"
+
       - name: Build GStreamer Android JNI glue
         run: bash ci/build-gstreamer-android-glue.sh
 
