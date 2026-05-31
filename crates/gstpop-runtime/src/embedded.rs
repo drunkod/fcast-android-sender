@@ -330,21 +330,67 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "uses process-global state; run with --test-threads=1 --ignored"]
-    async fn external_listener_is_adopted_and_not_killed() {
+    async fn external_listener_is_adopted_then_released_on_stop() {
         reset();
         let port = pick_free_port();
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.unwrap();
         let a = start_embedded(port).await;
         assert!(matches!(a.state, EmbeddedState::Running));
         assert!(a.externally_owned);
-        // Dropping the listener before stop means the port is gone — stop is still no-op
-        // because we track ownership via the flag, not by re-probing.
         drop(listener);
+        // stop_embedded clears externally_owned tracking and returns Stopped.
         let b = stop_embedded().await;
-        assert!(matches!(b.state, EmbeddedState::Running), "externally_owned: stop should be no-op");
-        assert!(b.externally_owned);
-        // Clean up so subsequent tests start fresh.
+        assert!(matches!(b.state, EmbeddedState::Stopped), "expected Stopped, got {:?}", b.state);
+        assert!(!b.externally_owned);
+        // CLAIMED and READY are cleared so a fresh start is possible.
         reset();
+    }
+
+    // ── Pure function unit tests (no server required) ──────────────────────
+
+    #[test]
+    fn is_localhost_recognises_loopback_forms() {
+        assert!(is_localhost("ws://127.0.0.1:9000/"));
+        assert!(is_localhost("http://localhost:8080/ws"));
+        assert!(is_localhost("ws://[::1]:9000/"));
+        assert!(!is_localhost("ws://192.168.1.1:9000/"));
+        assert!(!is_localhost("ws://0.0.0.0:9000/"));
+        assert!(!is_localhost("https://example.com/ws"));
+    }
+
+    #[test]
+    fn url_port_extracts_trailing_port() {
+        assert_eq!(url_port("ws://127.0.0.1:9000/"), 9000);
+        assert_eq!(url_port("http://localhost:8080"), 8080);
+        // url_port uses rsplit(':').next() + trim '/' — only works when port is
+        // the final path segment. A sub-path after the port is not supported by
+        // this helper (it exists for ws:// URLs of the form host:port[/]).
+        assert_eq!(url_port("ws://127.0.0.1:1234/"), 1234);
+        assert_eq!(url_port("ws://127.0.0.1:5555"), 5555);
+    }
+
+    #[test]
+    fn url_port_falls_back_to_9000_when_absent() {
+        assert_eq!(url_port("ws://127.0.0.1/"), 9000);
+        assert_eq!(url_port(""), 9000);
+    }
+
+    #[test]
+    fn embedded_config_localhost_defaults() {
+        let cfg = EmbeddedConfig::localhost(9001);
+        assert_eq!(cfg.bind, "127.0.0.1");
+        assert_eq!(cfg.port, 9001);
+        assert!(cfg.api_key.is_none());
+        assert!(cfg.allowed_origins.is_empty());
+    }
+
+    #[test]
+    fn embedded_config_is_loopback() {
+        assert!(EmbeddedConfig::localhost(9000).is_loopback());
+        assert!(EmbeddedConfig { bind: "::1".into(), port: 9000, api_key: None, allowed_origins: vec![] }.is_loopback());
+        assert!(EmbeddedConfig { bind: "localhost".into(), port: 9000, api_key: None, allowed_origins: vec![] }.is_loopback());
+        assert!(!EmbeddedConfig { bind: "0.0.0.0".into(), port: 9000, api_key: None, allowed_origins: vec![] }.is_loopback());
+        assert!(!EmbeddedConfig { bind: "192.168.1.1".into(), port: 9000, api_key: None, allowed_origins: vec![] }.is_loopback());
     }
 
     #[tokio::test]

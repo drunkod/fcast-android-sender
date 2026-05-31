@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use gstpop_runtime::{
     embedded_status, start_embedded, start_embedded_with_config, stop_embedded,
-    EmbeddedConfig, EmbeddedState, GstPopClient, TypedGstPopClient,
+    EmbeddedConfig, EmbeddedState, Event, GstPopClient, TypedGstPopClient,
 };
 
 static TEST_MUTEX: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
@@ -158,6 +158,113 @@ async fn typed_client_round_trips_playback_lifecycle() {
     client.pause(Some(&pid)).await.expect("pause");
     client.stop(Some(&pid)).await.expect("stop");
     client.remove_pipeline(&pid).await.expect("remove");
+
+    let _ = stop_embedded().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn update_pipeline_changes_description() {
+    let _guard = TEST_MUTEX.lock().await;
+    init_gstreamer();
+    hard_reset().await;
+    let port = pick_free_port();
+    let status = start_embedded(port).await;
+    assert!(matches!(status.state, EmbeddedState::Running));
+
+    let url = format!("ws://127.0.0.1:{port}/");
+    let inner = GstPopClient::connect(&url, None).await.expect("client connect");
+    let client = TypedGstPopClient::new(inner);
+
+    let pid = client
+        .create_pipeline("videotestsrc ! fakesink")
+        .await
+        .expect("create_pipeline");
+
+    client
+        .update_pipeline(&pid, "videotestsrc pattern=snow ! fakesink")
+        .await
+        .expect("update_pipeline");
+
+    let pipelines = client.list_pipelines().await.expect("list_pipelines");
+    let summary = pipelines.iter().find(|p| p.id == pid).expect("pipeline present after update");
+    assert!(
+        summary.description.contains("pattern=snow"),
+        "description should be updated, got: {}",
+        summary.description
+    );
+
+    client.remove_pipeline(&pid).await.expect("remove");
+    let _ = stop_embedded().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn client_receives_state_changed_events() {
+    let _guard = TEST_MUTEX.lock().await;
+    init_gstreamer();
+    hard_reset().await;
+    let port = pick_free_port();
+    let status = start_embedded(port).await;
+    assert!(matches!(status.state, EmbeddedState::Running));
+
+    let url = format!("ws://127.0.0.1:{port}/");
+    let inner = GstPopClient::connect(&url, None).await.expect("client connect");
+    let mut events = inner.subscribe();
+    let client = TypedGstPopClient::new(inner);
+
+    let pid = client
+        .create_pipeline("videotestsrc ! fakesink")
+        .await
+        .expect("create_pipeline");
+
+    client.play(Some(&pid)).await.expect("play");
+
+    // Drain events for up to 2s, looking for a StateChanged event for our pipeline.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    let mut saw_state_changed = false;
+    while tokio::time::Instant::now() < deadline {
+        match tokio::time::timeout(Duration::from_millis(200), events.recv()).await {
+            Ok(Ok(gstpop_runtime::Event::StateChanged { pipeline_id, .. })) if pipeline_id == pid => {
+                saw_state_changed = true;
+                break;
+            }
+            Ok(Ok(_)) => continue,
+            Ok(Err(_)) => break,
+            Err(_) => break,
+        }
+    }
+    assert!(saw_state_changed, "expected StateChanged event for pipeline {pid}");
+
+    client.stop(Some(&pid)).await.expect("stop");
+    client.remove_pipeline(&pid).await.expect("remove");
+    let _ = stop_embedded().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn list_pipelines_empty_after_removes() {
+    let _guard = TEST_MUTEX.lock().await;
+    init_gstreamer();
+    hard_reset().await;
+    let port = pick_free_port();
+    let status = start_embedded(port).await;
+    assert!(matches!(status.state, EmbeddedState::Running));
+
+    let url = format!("ws://127.0.0.1:{port}/");
+    let inner = GstPopClient::connect(&url, None).await.expect("client connect");
+    let client = TypedGstPopClient::new(inner);
+
+    let p1 = client.create_pipeline("videotestsrc ! fakesink").await.expect("create p1");
+    let p2 = client.create_pipeline("videotestsrc ! fakesink").await.expect("create p2");
+
+    let before = client.list_pipelines().await.expect("list before");
+    assert!(before.iter().any(|p| p.id == p1));
+    assert!(before.iter().any(|p| p.id == p2));
+
+    client.remove_pipeline(&p1).await.expect("remove p1");
+    client.remove_pipeline(&p2).await.expect("remove p2");
+
+    let after = client.list_pipelines().await.expect("list after");
+    assert!(!after.iter().any(|p| p.id == p1), "p1 should be gone");
+    assert!(!after.iter().any(|p| p.id == p2), "p2 should be gone");
 
     let _ = stop_embedded().await;
 }

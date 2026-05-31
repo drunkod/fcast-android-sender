@@ -186,4 +186,53 @@ mod tests {
         assert_eq!(v.duration_ns, Some(56789));
         assert_eq!(v.progress, Some(0.25));
     }
+
+    #[test]
+    fn pipeline_summary_deserializes_known_state() {
+        use crate::protocol::{PipelineState, PipelineStateExt};
+        let v: PipelineSummary = serde_json::from_value(json!({
+            "id": "pipe1",
+            "description": "videotestsrc ! fakesink",
+            "state": "playing",
+            "streaming": true,
+        }))
+        .unwrap();
+        assert_eq!(v.id, "pipe1");
+        assert_eq!(v.description, "videotestsrc ! fakesink");
+        assert_eq!(v.state, PipelineStateExt::Known(PipelineState::Playing));
+        assert!(v.streaming);
+    }
+
+    #[test]
+    fn pipeline_summary_deserializes_unknown_state() {
+        use crate::protocol::PipelineStateExt;
+        let v: PipelineSummary = serde_json::from_value(json!({
+            "id": "p2",
+            "description": "fakesrc ! fakesink",
+            "state": "future_state",
+        }))
+        .unwrap();
+        assert_eq!(v.state, PipelineStateExt::Unknown("future_state".into()));
+        assert!(!v.streaming);
+    }
+
+    #[test]
+    fn pipeline_summary_streaming_defaults_false() {
+        let v: PipelineSummary = serde_json::from_value(json!({
+            "id": "p3",
+            "description": "test",
+            "state": "null",
+        }))
+        .unwrap();
+        assert!(!v.streaming);
+    }
+
+    #[test]
+    fn create_pipeline_result_deserializes() {
+        let v: CreatePipelineResult = serde_json::from_value(json!({
+            "pipeline_id": "abc-123",
+        }))
+        .unwrap();
+        assert_eq!(v.pipeline_id, "abc-123");
+    }
 }

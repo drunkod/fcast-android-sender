@@ -194,6 +194,91 @@ mod tests {
         assert!(desc.contains("audio-sink=autoaudiosink"));
     }
 
+    #[test]
+    fn various_uri_schemes_pass_through() {
+        for uri in [
+            "rtsp://192.168.1.1/stream",
+            "rtp://239.0.0.1:5004",
+            "srt://host:1234",
+            "http://example.com/video.mp4",
+            "ftp://files.example.com/a.mkv",
+        ] {
+            assert_eq!(normalise_media_input(uri, None).unwrap(), uri, "scheme {uri} must pass through");
+        }
+    }
+
+    #[test]
+    fn whitespace_around_uri_is_trimmed_before_passthrough() {
+        let out = normalise_media_input("  https://example.com/a.mp4  ", None).unwrap();
+        assert_eq!(out, "https://example.com/a.mp4");
+    }
+
+    #[test]
+    fn relative_with_deep_base_dir() {
+        let base = PathBuf::from("/data/user/0/org.fcast.sender/files");
+        let out = normalise_media_input("subdir/clip.mp4", Some(&base)).unwrap();
+        assert_eq!(out, "file:///data/user/0/org.fcast.sender/files/subdir/clip.mp4");
+    }
+
+    #[test]
+    fn build_playbin_no_sinks_produces_minimal_description() {
+        let desc = build_playbin_description("/tmp/a.mp4", None, None, None, false).unwrap();
+        assert!(desc.starts_with("playbin3 uri=\"file://"), "got {desc}");
+        assert!(!desc.contains("video-sink"), "got {desc}");
+        assert!(!desc.contains("audio-sink"), "got {desc}");
+    }
+
+    #[test]
+    fn build_playbin_legacy_uses_playbin_element() {
+        let desc = build_playbin_description("/tmp/a.mp4", None, None, None, true).unwrap();
+        assert!(desc.starts_with("playbin uri="), "got {desc}");
+        assert!(!desc.contains("playbin3"), "got {desc}");
+    }
+
+    #[test]
+    fn build_playbin_only_video_sink() {
+        let desc = build_playbin_description("/tmp/a.mp4", None, Some("autovideosink"), None, false).unwrap();
+        assert!(desc.contains("video-sink=autovideosink"));
+        assert!(!desc.contains("audio-sink"), "got {desc}");
+    }
+
+    #[test]
+    fn build_playbin_only_audio_sink() {
+        let desc = build_playbin_description("/tmp/a.mp4", None, None, Some("autoaudiosink"), false).unwrap();
+        assert!(desc.contains("audio-sink=autoaudiosink"));
+        assert!(!desc.contains("video-sink"), "got {desc}");
+    }
+
+    #[test]
+    fn build_playbin_escapes_double_quote_in_uri() {
+        // Construct a URI that contains double quotes (passes through normalise unchanged).
+        let input = r#"rtsp://host/path"with"quotes"#;
+        let desc = build_playbin_description(input, None, None, None, false).unwrap();
+        // Each quote must be escaped as \" — no bare unescaped " should remain
+        // outside the surrounding uri="..." wrapper quotes.
+        assert!(desc.contains(r#"\""#), "quotes must be backslash-escaped: {desc}");
+        // The original unescaped sequence should not appear literally.
+        assert!(!desc.contains(r#"path"with"#), "raw unescaped quote sequence present: {desc}");
+    }
+
+    #[test]
+    fn rejects_all_forbidden_sink_chars() {
+        let bad = ['!', '\'', '`', ' ', '\t', '\n'];
+        for ch in bad {
+            let name = format!("sink{ch}name");
+            assert!(
+                build_playbin_description("/tmp/a.mp4", None, Some(&name), None, false).is_err(),
+                "char {ch:?} should be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_empty_sink_name() {
+        assert!(build_playbin_description("/tmp/a.mp4", None, Some(""), None, false).is_err());
+        assert!(build_playbin_description("/tmp/a.mp4", None, None, Some(""), false).is_err());
+    }
+
     #[tokio::test]
     #[ignore = "requires gstreamer plugins on host; run locally with --ignored"]
     async fn discover_resolves_local_audio_file() {
