@@ -112,8 +112,13 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 // ── DAEMON STATUS ─────────────────────────────────────────
                 SettingsSection {
                     title: @tr("DAEMON STATUS");
-                    Card {
-                        VerticalLayout {
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: daemon-layout.preferred-height;
+
+                        daemon-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
                             spacing: 8px;
 
                             HorizontalLayout {
@@ -166,8 +171,13 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 // ── PIPELINE DESCRIPTION INPUT ────────────────────────────
                 SettingsSection {
                     title: @tr("PIPELINE");
-                    Card {
-                        VerticalLayout {
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: pipeline-layout.preferred-height;
+
+                        pipeline-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
                             spacing: 8px;
 
                             Text {
@@ -203,8 +213,13 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 // ── ACTIONS ───────────────────────────────────────────────
                 SettingsSection {
                     title: @tr("ACTIONS");
-                    Card {
-                        VerticalLayout {
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: actions-layout.preferred-height;
+
+                        actions-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
                             spacing: 8px;
 
                             // Row 1: daemon lifecycle
@@ -283,8 +298,13 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 // ── EVENT LOG ─────────────────────────────────────────────
                 SettingsSection {
                     title: @tr("EVENT LOG");
-                    Card {
-                        VerticalLayout {
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: event-log-layout.preferred-height;
+
+                        event-log-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
                             spacing: 4px;
 
                             HorizontalLayout {
@@ -322,8 +342,13 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 // ── FULL TEST RESULT ──────────────────────────────────────
                 if Bridge.gstpop-dt-test-result != "": SettingsSection {
                     title: @tr("LAST FULL TEST");
-                    Card {
-                        VerticalLayout {
+                    Rectangle {
+                        background: Theme.surface-card;
+                        border-radius: Theme.radius-card;
+                        preferred-height: test-result-layout.preferred-height;
+
+                        test-result-layout := VerticalLayout {
+                            padding: Theme.padding-screen;
                             spacing: 4px;
                             Text {
                                 text: Bridge.gstpop-dt-test-result;
