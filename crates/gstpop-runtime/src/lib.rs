@@ -28,3 +28,9 @@ pub use typed_client::{
 
 #[cfg(feature = "media-tools")]
 pub mod media;
+
+#[cfg(feature = "media-tools")]
+pub use media::{
+    build_playbin_description, discover, normalise_media_input, AudioStreamInfo, ContainerInfo,
+    DiscoverResult, SubtitleStreamInfo, TagsInfo, VideoStreamInfo,
+};

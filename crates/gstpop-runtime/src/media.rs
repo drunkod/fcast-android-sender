@@ -99,6 +99,38 @@ fn validate_sink_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+use std::time::Duration;
+
+pub use gstpop::gst::discoverer::{
+    AudioStreamInfo, ContainerInfo, DiscoverResult, SubtitleStreamInfo, TagsInfo, VideoStreamInfo,
+};
+
+/// Discover media metadata for `input`, normalising the path first.
+///
+/// `base_dir` follows the same rule as
+/// [`normalise_media_input`]: `Some(...)` is required on Android.
+/// `timeout` defaults to 5 seconds when `None`.
+pub async fn discover(
+    input: &str,
+    base_dir: Option<&Path>,
+    timeout: Option<Duration>,
+) -> Result<DiscoverResult> {
+    let uri = normalise_media_input(input, base_dir)?;
+    let timeout_secs = timeout.map(|t| t.as_secs() as u32);
+
+    // Run the synchronous gstreamer discoverer on a blocking thread so we
+    // don't stall the tokio runtime.
+    let uri_for_blocking = uri.clone();
+    let info = tokio::task::spawn_blocking(move || -> Result<DiscoverResult> {
+        gstpop::gst::discoverer::discover_uri(&uri_for_blocking, timeout_secs)
+            .map_err(|e| anyhow::anyhow!("discover failed: {e:#}"))
+    })
+    .await
+    .map_err(|e| anyhow::anyhow!("discoverer join failed: {e}"))??;
+
+    Ok(info)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +192,25 @@ mod tests {
         assert!(desc.starts_with("playbin3 uri=\"file://"), "got {desc}");
         assert!(desc.contains("video-sink=autovideosink"));
         assert!(desc.contains("audio-sink=autoaudiosink"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires gstreamer plugins on host; run locally with --ignored"]
+    async fn discover_resolves_local_audio_file() {
+        let fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/silence.wav");
+        if !fixture.exists() {
+            eprintln!("skip: fixture {} missing", fixture.display());
+            return;
+        }
+        let info = discover(
+            fixture.to_str().unwrap(),
+            None,
+            Some(std::time::Duration::from_secs(2)),
+        )
+        .await
+        .expect("discover");
+        assert!(info.uri.starts_with("file://"));
+        assert!(info.audio_streams.len() >= 1);
     }
 }
