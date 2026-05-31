@@ -25,3 +25,6 @@ pub mod typed_client;
 pub use typed_client::{
     PipelineSummary, PositionInfo, TypedGstPopClient,
 };
+
+#[cfg(feature = "media-tools")]
+pub mod media;
