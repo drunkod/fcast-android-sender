@@ -2493,6 +2493,7 @@ dependencies = [
  "async-trait",
  "futures-util",
  "gstpop",
+ "gstreamer 0.25.2",
  "log",
  "once_cell",
  "parking_lot",

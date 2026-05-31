@@ -66,7 +66,13 @@ impl TypedGstPopClient {
             .call("list_pipelines", json!({}))
             .await
             .context("list_pipelines RPC failed")?;
-        serde_json::from_value(value).context("list_pipelines result shape")
+        #[derive(Deserialize)]
+        struct ListPipelinesResultHelper {
+            pipelines: Vec<PipelineSummary>,
+        }
+        let parsed: ListPipelinesResultHelper =
+            serde_json::from_value(value).context("list_pipelines result shape")?;
+        Ok(parsed.pipelines)
     }
 
     pub async fn play(&self, pipeline_id: Option<&str>) -> Result<()> {

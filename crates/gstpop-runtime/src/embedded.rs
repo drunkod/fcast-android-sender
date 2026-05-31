@@ -207,7 +207,15 @@ pub async fn stop_embedded() -> EmbeddedStatus {
     }
 
     if STATE.read().externally_owned {
-        tracing::info!("stop_embedded: listener is externally owned; no-op");
+        tracing::info!("stop_embedded: listener is externally owned; stopping tracking");
+        let mut st = STATE.write();
+        st.state = EmbeddedState::Stopped;
+        st.externally_owned = false;
+        st.last_error = None;
+        st.started_at_unix_ms = None;
+        drop(st);
+        READY.store(false, Ordering::Release);
+        CLAIMED.store(false, Ordering::Release);
         return snapshot();
     }
 
