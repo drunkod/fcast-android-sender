@@ -17,3 +17,11 @@ pub use embedded::{
     stop_embedded, url_port, EmbeddedConfig, EmbeddedState, EmbeddedStatus,
 };
 pub use protocol::{classify, ClassifiedFrame, Event, Request, Response};
+
+#[cfg(feature = "typed-client")]
+pub mod typed_client;
+
+#[cfg(feature = "typed-client")]
+pub use typed_client::{
+    PipelineSummary, PositionInfo, TypedGstPopClient,
+};

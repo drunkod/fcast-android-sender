@@ -22,3 +22,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full", "test-util", "macros"] }
+
+[features]
+default = []
+typed-client = []
