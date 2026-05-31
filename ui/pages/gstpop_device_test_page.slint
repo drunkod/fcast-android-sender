@@ -113,6 +113,7 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 SettingsSection {
                     title: @tr("DAEMON STATUS");
                     Card {
+                        min-card-height: 160px;
                         VerticalLayout {
                             padding: Theme.padding-screen;
                             spacing: 8px;
@@ -168,6 +169,7 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 SettingsSection {
                     title: @tr("PIPELINE");
                     Card {
+                        min-card-height: 180px;
                         VerticalLayout {
                             padding: Theme.padding-screen;
                             spacing: 8px;
@@ -206,6 +208,7 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 SettingsSection {
                     title: @tr("ACTIONS");
                     Card {
+                        min-card-height: 220px;
                         VerticalLayout {
                             padding: Theme.padding-screen;
                             spacing: 8px;
@@ -328,6 +331,7 @@ export component GstPopDeviceTestPage inherits Rectangle {
                 if Bridge.gstpop-dt-test-result != "": SettingsSection {
                     title: @tr("LAST FULL TEST");
                     Card {
+                        min-card-height: 80px;
                         VerticalLayout {
                             padding: Theme.padding-screen;
                             spacing: 4px;
