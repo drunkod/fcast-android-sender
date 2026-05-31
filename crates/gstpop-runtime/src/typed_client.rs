@@ -10,11 +10,13 @@ use serde_json::{json, Value};
 
 use crate::client::GstPopClient;
 
+use crate::protocol::PipelineStateExt;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct PipelineSummary {
     pub id: String,
     pub description: String,
-    pub state: String,
+    pub state: PipelineStateExt,
     #[serde(default)]
     pub streaming: bool,
 }

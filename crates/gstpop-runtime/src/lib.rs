@@ -16,7 +16,10 @@ pub use embedded::{
     embedded_status, is_localhost, start_embedded, start_embedded_with_config,
     stop_embedded, url_port, EmbeddedConfig, EmbeddedState, EmbeddedStatus,
 };
-pub use protocol::{classify, ClassifiedFrame, Event, Request, Response};
+pub use protocol::{
+    classify, ClassifiedFrame, Event, PipelineEventKind, PipelineState,
+    PipelineStateExt, Request, Response,
+};
 
 #[cfg(feature = "typed-client")]
 pub mod typed_client;

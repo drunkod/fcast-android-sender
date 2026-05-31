@@ -114,3 +114,119 @@ pub fn classify(text: &str) -> ClassifiedFrame {
         ClassifiedFrame::Garbage
     }
 }
+
+/// Mirror of `gstpop::gst::event::PipelineState`. Unknown server values fall
+/// through to `Other` so clients survive server upgrades.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineState {
+    Null,
+    Ready,
+    Paused,
+    Playing,
+    #[serde(other)]
+    Other,
+}
+
+impl PipelineState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Null => "null",
+            Self::Ready => "ready",
+            Self::Paused => "paused",
+            Self::Playing => "playing",
+            Self::Other => "other",
+        }
+    }
+}
+
+/// Mirror of the daemon's `PipelineEvent` discriminant. Kept opaque on
+/// payload to avoid a second migration step if the server adds fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PipelineEventKind {
+    StateChanged,
+    Position,
+    Eos,
+    Error,
+    Warning,
+    Info,
+    StreamStart,
+    AsyncDone,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PipelineStateExt {
+    Known(PipelineState),
+    Unknown(String),
+}
+
+impl<'de> Deserialize<'de> for PipelineStateExt {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        let known = match s.as_str() {
+            "null" => Some(PipelineState::Null),
+            "ready" => Some(PipelineState::Ready),
+            "paused" => Some(PipelineState::Paused),
+            "playing" => Some(PipelineState::Playing),
+            _ => None,
+        };
+        Ok(match known {
+            Some(k) => PipelineStateExt::Known(k),
+            None => PipelineStateExt::Unknown(s),
+        })
+    }
+}
+
+impl serde::Serialize for PipelineStateExt {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Known(k) => s.serialize_str(k.as_str()),
+            Self::Unknown(raw) => s.serialize_str(raw),
+        }
+    }
+}
+
+#[cfg(test)]
+mod typed_state_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn known_states_round_trip() {
+        for raw in ["null", "ready", "paused", "playing"] {
+            let parsed: PipelineState = serde_json::from_value(json!(raw)).unwrap();
+            assert_eq!(parsed.as_str(), raw);
+        }
+    }
+
+    #[test]
+    fn unknown_state_falls_through() {
+        let parsed: PipelineState =
+            serde_json::from_value(json!("future_state")).unwrap();
+        assert!(matches!(parsed, PipelineState::Other));
+    }
+
+    #[test]
+    fn ext_preserves_unknown() {
+        let parsed: PipelineStateExt =
+            serde_json::from_value(json!("future_state")).unwrap();
+        match parsed {
+            PipelineStateExt::Unknown(s) => assert_eq!(s, "future_state"),
+            other => panic!("expected Unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn event_kinds() {
+        let parsed: PipelineEventKind =
+            serde_json::from_value(json!("state_changed")).unwrap();
+        assert_eq!(parsed, PipelineEventKind::StateChanged);
+
+        let unknown: PipelineEventKind =
+            serde_json::from_value(json!("new_event")).unwrap();
+        assert_eq!(unknown, PipelineEventKind::Other);
+    }
+}
