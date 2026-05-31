@@ -134,6 +134,7 @@ export enum Panel {
     mixer,
     media-backend,
     test-functionality,
+    gstpop-device-test,
 }
 
 export struct QuickAction {
@@ -445,6 +446,41 @@ export global Bridge {
     callback start-test();
     callback stop-test();
     callback pick-test-overlay-image();
+
+    // ── gstpop device-test panel (Step 14) ──────────────────────────────────────
+    // Daemon status
+    in-out property <string> gstpop-dt-daemon-state:      "stopped";
+    in-out property <string> gstpop-dt-daemon-bind:       "";
+    in-out property <int>    gstpop-dt-daemon-port:        0;
+    in-out property <bool>   gstpop-dt-daemon-external:   false;
+    in-out property <string> gstpop-dt-daemon-last-error: "";
+    // Pipeline under test
+    in-out property <string> gstpop-dt-pipeline-desc:  "videotestsrc ! fakesink";
+    in-out property <string> gstpop-dt-pipeline-id:    "";
+    in-out property <string> gstpop-dt-pipeline-state: "";
+    // Log lines (8-slot ring, newest-first; level: "info"|"ok"|"warn"|"error")
+    in-out property <string> gstpop-dt-log-line-0: "";  in-out property <string> gstpop-dt-log-level-0: "info";
+    in-out property <string> gstpop-dt-log-line-1: "";  in-out property <string> gstpop-dt-log-level-1: "info";
+    in-out property <string> gstpop-dt-log-line-2: "";  in-out property <string> gstpop-dt-log-level-2: "info";
+    in-out property <string> gstpop-dt-log-line-3: "";  in-out property <string> gstpop-dt-log-level-3: "info";
+    in-out property <string> gstpop-dt-log-line-4: "";  in-out property <string> gstpop-dt-log-level-4: "info";
+    in-out property <string> gstpop-dt-log-line-5: "";  in-out property <string> gstpop-dt-log-level-5: "info";
+    in-out property <string> gstpop-dt-log-line-6: "";  in-out property <string> gstpop-dt-log-level-6: "info";
+    in-out property <string> gstpop-dt-log-line-7: "";  in-out property <string> gstpop-dt-log-level-7: "info";
+    // Full lifecycle test
+    in-out property <bool>   gstpop-dt-test-running: false;
+    in-out property <bool>   gstpop-dt-test-passed:  false;
+    in-out property <string> gstpop-dt-test-result:  "";
+    // Callbacks (UI → Rust)
+    callback gstpop-dt-start-daemon();
+    callback gstpop-dt-stop-daemon();
+    callback gstpop-dt-create-pipeline();
+    callback gstpop-dt-remove-pipeline();
+    callback gstpop-dt-play();
+    callback gstpop-dt-pause();
+    callback gstpop-dt-stop-pipeline();
+    callback gstpop-dt-run-full-test();
+    callback gstpop-dt-clear-log();
 
     // ── Public functions (callable from Slint) ───────────────────────────
     public function change-state(to: AppState) {
