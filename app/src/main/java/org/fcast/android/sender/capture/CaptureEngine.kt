@@ -61,13 +61,6 @@ class CaptureEngine {
     private var vboId = 0
     private var oesTexId = 0
 
-    private val quad = floatArrayOf(
-        -1f, -1f, 0f, 1f,
-         1f, -1f, 1f, 1f,
-        -1f,  1f, 0f, 0f,
-         1f,  1f, 1f, 0f
-    )
-
     private var lastFrameNanos: Long = 0L
     private var minIntervalNanos: Long = 0L
     private val shouldCapture = AtomicBoolean(false)
@@ -190,6 +183,20 @@ class CaptureEngine {
         }
     }
 
+    class GlState(
+        val display: EGLDisplay,
+        val context: EGLContext,
+        val surface: EGLSurface,
+        val oesTexId: Int,
+        val vboId: Int,
+        val yFb: Framebuffer,
+        val uFb: Framebuffer,
+        val vFb: Framebuffer,
+        val yProg: Program,
+        val uProg: Program,
+        val vProg: Program,
+    )
+
     fun start(
         projection: MediaProjection,
         config: CaptureConfig,
@@ -212,28 +219,18 @@ class CaptureEngine {
                 val downscaledDims = srcDims.scale(maxDims)
                 val uvDims = Dimensions(downscaledDims.width / 2, downscaledDims.height / 2)
 
-                initEgl(downscaledDims)
-
-                oesTexId = createOesTexture()
-
-                yFramebuffer = Framebuffer(downscaledDims)
-                uFramebuffer = Framebuffer(uvDims)
-                vFramebuffer = Framebuffer(uvDims)
-
-                yProg = Program(fragmentShaderY, false)
-                uProg = Program(fragmentShaderU, true)
-                vProg = Program(fragmentShaderV, true)
-
-                val vbos = IntArray(1)
-                glGenBuffers(1, vbos, 0)
-                vboId = vbos[0]
-
-                glBindBuffer(GL_ARRAY_BUFFER, vboId)
-                val vertexBuffer = ByteBuffer.allocateDirect(quad.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
-                vertexBuffer.put(quad)
-                vertexBuffer.position(0)
-                glBufferData(GL_ARRAY_BUFFER, quad.size * 4, vertexBuffer, GL_STATIC_DRAW)
-                glBindBuffer(GL_ARRAY_BUFFER, 0)
+                val glState = setupGlForCapture(downscaledDims, uvDims, mirror = false)
+                eglDisplay = glState.display
+                eglContext = glState.context
+                eglSurface = glState.surface
+                oesTexId = glState.oesTexId
+                vboId = glState.vboId
+                yFramebuffer = glState.yFb
+                uFramebuffer = glState.uFb
+                vFramebuffer = glState.vFb
+                yProg = glState.yProg
+                uProg = glState.uProg
+                vProg = glState.vProg
 
                 val st = SurfaceTexture(oesTexId).also { surfaceTexture = it }
                 st.setDefaultBufferSize(srcDims.width, srcDims.height)
@@ -288,47 +285,8 @@ class CaptureEngine {
                 Log.w(TAG, "shutdown raced with a frame", t)
             }
         }
-        glThread.quitSafely()
+        glHandler.looper.quitSafely()
         try { glThread.join(1000L) } catch (_: InterruptedException) {}
-    }
-
-    @WorkerThread
-    private fun initEgl(dims: Dimensions) {
-        eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
-        require(eglDisplay != EGL14.EGL_NO_DISPLAY) { "eglGetDisplay failed" }
-
-        val version = IntArray(2)
-        EGL14.eglInitialize(eglDisplay, version, 0, version, 1)
-
-        val configs = arrayOfNulls<EGLConfig>(1)
-        val numConfig = IntArray(1)
-        EGL14.eglChooseConfig(
-            eglDisplay,
-            EGL_CONFIG_ATTRIBS, 0, configs, 0, 1, numConfig, 0
-        )
-
-        val ctxAttribs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
-        eglContext = EGL14.eglCreateContext(
-            eglDisplay, configs[0], EGL14.EGL_NO_CONTEXT, ctxAttribs, 0
-        )
-
-        val pbufAttribs = intArrayOf(EGL14.EGL_WIDTH, dims.width, EGL14.EGL_HEIGHT, dims.height, EGL14.EGL_NONE)
-        eglSurface = EGL14.eglCreatePbufferSurface(eglDisplay, configs[0], pbufAttribs, 0)
-        require(EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
-            "eglMakeCurrent failed: " + EGL14.eglGetError()
-        }
-    }
-
-    private fun createOesTexture(): Int {
-        val tex = IntArray(1)
-        glGenTextures(1, tex, 0)
-        glBindTexture(GL_TEXTURE_EXTERNAL_OES, tex[0])
-        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-        glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0)
-        return tex[0]
     }
 
     @WorkerThread
@@ -364,9 +322,9 @@ class CaptureEngine {
         val texMatrix = FloatArray(16)
         st.getTransformMatrix(texMatrix)
 
-        renderToFbWithProg(oesTexId, yFb, yP, texMatrix)
-        renderToFbWithProg(oesTexId, uFb, uP, texMatrix)
-        renderToFbWithProg(oesTexId, vFb, vP, texMatrix)
+        renderToFb(oesTexId, yFb, yP, texMatrix, vboId)
+        renderToFb(oesTexId, uFb, uP, texMatrix, vboId)
+        renderToFb(oesTexId, vFb, vP, texMatrix, vboId)
 
         yFb.readPixels()
         uFb.readPixels()
@@ -383,71 +341,20 @@ class CaptureEngine {
         )
     }
 
-    private fun renderToFbWithProg(oesTexId: Int, fb: Framebuffer, prog: Program, texMatrix: FloatArray) {
-        glBindFramebuffer(GL_FRAMEBUFFER, fb.fboId)
-        glViewport(0, 0, fb.dims.width, fb.dims.height)
-
-        glUseProgram(prog.program)
-
-        glBindBuffer(GL_ARRAY_BUFFER, vboId)
-
-        glEnableVertexAttribArray(prog.position)
-        glVertexAttribPointer(prog.position, 2, GL_FLOAT, false, 16, 0)
-
-        glEnableVertexAttribArray(prog.texCoord)
-        glVertexAttribPointer(prog.texCoord, 2, GL_FLOAT, false, 16, 8)
-
-        glUniformMatrix4fv(prog.texMatrix, 1, false, texMatrix, 0)
-
-        if (prog.srcSize != 0) {
-            val metrics = android.content.res.Resources.getSystem().displayMetrics
-            glUniform2f(prog.srcSize, metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
-        }
-
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_EXTERNAL_OES, oesTexId)
-        glUniform1i(prog.textureUniform, 0)
-
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
-
-        glDisableVertexAttribArray(prog.position)
-        glDisableVertexAttribArray(prog.texCoord)
-        glBindBuffer(GL_ARRAY_BUFFER, 0)
-
-        glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0)
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0)
-    }
-
     @WorkerThread
     private fun releaseGl() {
-        if (yProg != null) { glDeleteProgram(yProg!!.program); yProg = null }
-        if (uProg != null) { glDeleteProgram(uProg!!.program); uProg = null }
-        if (vProg != null) { glDeleteProgram(vProg!!.program); vProg = null }
-
-        val fbos = intArrayOf(
-            yFramebuffer?.fboId ?: 0,
-            uFramebuffer?.fboId ?: 0,
-            vFramebuffer?.fboId ?: 0
+        releaseGl(
+            eglDisplay, eglContext, eglSurface, oesTexId, vboId,
+            listOf(yFramebuffer, uFramebuffer, vFramebuffer),
+            listOf(yProg, uProg, vProg)
         )
-        if (fbos[0] != 0 || fbos[1] != 0 || fbos[2] != 0) {
-            glDeleteFramebuffers(3, fbos, 0)
-        }
-        val texs = intArrayOf(
-            oesTexId,
-            yFramebuffer?.texId ?: 0,
-            uFramebuffer?.texId ?: 0,
-            vFramebuffer?.texId ?: 0
-        )
-        glDeleteTextures(4, texs, 0)
         oesTexId = 0
         yFramebuffer = null
         uFramebuffer = null
         vFramebuffer = null
-
-        if (eglSurface != EGL14.EGL_NO_SURFACE) { EGL14.eglDestroySurface(eglDisplay, eglSurface); eglSurface = EGL14.EGL_NO_SURFACE }
-        if (eglContext != EGL14.EGL_NO_CONTEXT) { EGL14.eglDestroyContext(eglDisplay, eglContext); eglContext = EGL14.EGL_NO_CONTEXT }
-        if (eglDisplay != EGL14.EGL_NO_DISPLAY) { EGL14.eglTerminate(eglDisplay); eglDisplay = EGL14.EGL_NO_DISPLAY }
+        eglSurface = EGL14.EGL_NO_SURFACE
+        eglContext = EGL14.EGL_NO_CONTEXT
+        eglDisplay = EGL14.EGL_NO_DISPLAY
     }
 
     companion object {
@@ -505,5 +412,180 @@ void main() {""" + subsampledRgb + """
     float v = 0.5 * rgb.r - 0.4542 * rgb.g - 0.0458 * rgb.b + 0.5;
     gl_FragColor = vec4(v, 0.0, 0.0, 0.0);
 }"""
+
+        private val quad = floatArrayOf(
+            -1f, -1f, 0f, 1f,
+             1f, -1f, 1f, 1f,
+            -1f,  1f, 0f, 0f,
+             1f,  1f, 1f, 0f
+        )
+
+        fun createOesTexture(): Int {
+            val tex = IntArray(1)
+            glGenTextures(1, tex, 0)
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, tex[0])
+            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+            glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0)
+            return tex[0]
+        }
+
+        @JvmStatic
+        fun setupGlForCapture(
+            outDims: Dimensions,
+            uvDims: Dimensions,
+            mirror: Boolean
+        ): GlState {
+            val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
+            require(display != EGL14.EGL_NO_DISPLAY) { "eglGetDisplay failed" }
+
+            val version = IntArray(2)
+            EGL14.eglInitialize(display, version, 0, version, 1)
+
+            val configs = arrayOfNulls<EGLConfig>(1)
+            val numConfig = IntArray(1)
+            EGL14.eglChooseConfig(
+                display,
+                EGL_CONFIG_ATTRIBS, 0, configs, 0, 1, numConfig, 0
+            )
+
+            val ctxAttribs = intArrayOf(EGL14.EGL_CONTEXT_CLIENT_VERSION, 3, EGL14.EGL_NONE)
+            val context = EGL14.eglCreateContext(
+                display, configs[0], EGL14.EGL_NO_CONTEXT, ctxAttribs, 0
+            )
+
+            val pbufAttribs = intArrayOf(EGL14.EGL_WIDTH, outDims.width, EGL14.EGL_HEIGHT, outDims.height, EGL14.EGL_NONE)
+            val surface = EGL14.eglCreatePbufferSurface(display, configs[0], pbufAttribs, 0)
+            require(EGL14.eglMakeCurrent(display, surface, surface, context)) {
+                "eglMakeCurrent failed: " + EGL14.eglGetError()
+            }
+
+            val oesTexId = createOesTexture()
+
+            val yFb = Framebuffer(outDims)
+            val uFb = Framebuffer(uvDims)
+            val vFb = Framebuffer(uvDims)
+
+            val yProg = Program(fragmentShaderY, false)
+            val uProg = Program(fragmentShaderU, true)
+            val vProg = Program(fragmentShaderV, true)
+
+            val vbos = IntArray(1)
+            glGenBuffers(1, vbos, 0)
+            val vboId = vbos[0]
+
+            glBindBuffer(GL_ARRAY_BUFFER, vboId)
+            val vertexBuffer = ByteBuffer.allocateDirect(quad.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
+            val localQuad = if (mirror) {
+                floatArrayOf(
+                    -1f, -1f, 1f, 1f,
+                     1f, -1f, 0f, 1f,
+                    -1f,  1f, 1f, 0f,
+                     1f,  1f, 0f, 0f
+                )
+            } else {
+                quad
+            }
+            vertexBuffer.put(localQuad)
+            vertexBuffer.position(0)
+            glBufferData(GL_ARRAY_BUFFER, localQuad.size * 4, vertexBuffer, GL_STATIC_DRAW)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+            return GlState(
+                display = display,
+                context = context,
+                surface = surface,
+                oesTexId = oesTexId,
+                vboId = vboId,
+                yFb = yFb,
+                uFb = uFb,
+                vFb = vFb,
+                yProg = yProg,
+                uProg = uProg,
+                vProg = vProg
+            )
+        }
+
+        @JvmStatic
+        fun renderToFb(oesTexId: Int, fb: Framebuffer, prog: Program, texMatrix: FloatArray, vboId: Int) {
+            glBindFramebuffer(GL_FRAMEBUFFER, fb.fboId)
+            glViewport(0, 0, fb.dims.width, fb.dims.height)
+
+            glUseProgram(prog.program)
+
+            glBindBuffer(GL_ARRAY_BUFFER, vboId)
+
+            glEnableVertexAttribArray(prog.position)
+            glVertexAttribPointer(prog.position, 2, GL_FLOAT, false, 16, 0)
+
+            glEnableVertexAttribArray(prog.texCoord)
+            glVertexAttribPointer(prog.texCoord, 2, GL_FLOAT, false, 16, 8)
+
+            glUniformMatrix4fv(prog.texMatrix, 1, false, texMatrix, 0)
+
+            if (prog.srcSize != 0) {
+                val metrics = android.content.res.Resources.getSystem().displayMetrics
+                glUniform2f(prog.srcSize, metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+            }
+
+            glActiveTexture(GL_TEXTURE0)
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, oesTexId)
+            glUniform1i(prog.textureUniform, 0)
+
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
+
+            glDisableVertexAttribArray(prog.position)
+            glDisableVertexAttribArray(prog.texCoord)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+            glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0)
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0)
+        }
+
+        @JvmStatic
+        fun releaseGl(
+            display: EGLDisplay,
+            context: EGLContext,
+            surface: EGLSurface,
+            oesTexId: Int,
+            vboId: Int,
+            framebuffers: List<Framebuffer?>,
+            programs: List<Program?>,
+        ) {
+            programs.forEach { prog ->
+                if (prog != null && prog.program != 0) {
+                    glDeleteProgram(prog.program)
+                }
+            }
+
+            val fbos = intArrayOf(
+                framebuffers.getOrNull(0)?.fboId ?: 0,
+                framebuffers.getOrNull(1)?.fboId ?: 0,
+                framebuffers.getOrNull(2)?.fboId ?: 0
+            )
+            if (fbos[0] != 0 || fbos[1] != 0 || fbos[2] != 0) {
+                glDeleteFramebuffers(3, fbos, 0)
+            }
+            val texs = intArrayOf(
+                oesTexId,
+                framebuffers.getOrNull(0)?.texId ?: 0,
+                framebuffers.getOrNull(1)?.texId ?: 0,
+                framebuffers.getOrNull(2)?.texId ?: 0
+            )
+            glDeleteTextures(4, texs, 0)
+
+            if (surface != EGL14.EGL_NO_SURFACE) {
+                EGL14.eglDestroySurface(display, surface)
+            }
+            if (context != EGL14.EGL_NO_CONTEXT) {
+                EGL14.eglDestroyContext(display, context)
+            }
+            if (display != EGL14.EGL_NO_DISPLAY) {
+                EGL14.eglTerminate(display)
+            }
+        }
     }
 }
