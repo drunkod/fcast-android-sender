@@ -243,6 +243,11 @@ export component FullSettingsPage inherits Rectangle {
                         value: @tr("open-panel-action" => "Open");
                         clicked => { PanelBridge.push(Panel.mixer); }
                     }
+                    SettingsValueRow {
+                        title: @tr("Camera RTMP Stream");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.camera-rtmp-stream); }
+                    }
                 }
 
                 // ── Section: AUTOMATION ───────────────────────────────────
