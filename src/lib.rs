@@ -28,6 +28,14 @@ use crate::platform::platform_app::PlatformApp;
 lazy_static::lazy_static! {
     pub static ref GLOB_EVENT_CHAN: (crossbeam_channel::Sender<Event>, crossbeam_channel::Receiver<Event>)
         = crossbeam_channel::bounded(2);
+    /// Camera-capture lifecycle channel. Separate from `GLOB_EVENT_CHAN` because
+    /// `mcore::Event` is an external (pinned) dependency that does not carry
+    /// camera variants. Producers: JNI handlers in `jni_bridge::main_activity`.
+    /// Consumers: camera-RTMP start/stop flow in `android_main`.
+    pub static ref GLOB_CAMERA_EVENT_CHAN: (
+        crossbeam_channel::Sender<crate::jni_bridge::main_activity::CameraEvent>,
+        crossbeam_channel::Receiver<crate::jni_bridge::main_activity::CameraEvent>,
+    ) = crossbeam_channel::bounded(4);
     pub static ref FRAME_PAIR: Arc<migration_runtime::FramePair> = migration_runtime::FramePair::new();
     pub static ref FRAME_POOL: Mutex<gst_video::VideoBufferPool> = Mutex::new(gst_video::VideoBufferPool::new());
 }

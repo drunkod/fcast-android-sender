@@ -17,6 +17,8 @@ import android.util.Size
 import android.view.Surface
 import androidx.annotation.WorkerThread
 import org.fcast.android.sender.MainActivity
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -165,7 +167,9 @@ open class CameraCaptureEngine {
         onStarted: (Int, Int) -> Unit, onFatalError: (String) -> Unit,
     ) {
         // 1. Set up EGL + shaders — delegate to CaptureEngine helpers.
-        //    (See Step 7-note: extract to GlYuvPipeline.kt in the optional Phase 5 refactor.)
+        //    Mirror is applied here via the VBO geometry (see setupGlForCapture).
+        //    Downstream pipelines (Phase 3 CameraSourceNode) must NOT insert an
+        //    additional `videoflip` — frames already arrive pre-flipped.
         val gl = CaptureEngine.setupGlForCapture(outDims, uvDims, mirror = config.mirror)
         eglDisplay = gl.display; eglContext = gl.context; eglSurface = gl.surface
         oesTexId = gl.oesTexId; vboId = gl.vboId
@@ -268,11 +272,17 @@ open class CameraCaptureEngine {
         running = false
         shouldCapture.set(false)
 
+        // Ensure both teardown tasks run to completion before we tear down the
+        // loopers — otherwise quitSafely() can race with a frame still being
+        // processed on the GL thread and leak GL resources on slow devices.
+        val done = CountDownLatch(2)
+
         cameraHandler.post {
             try { captureSession?.close() } catch (_: Exception) {}
             captureSession = null
             try { cameraDevice?.close() } catch (_: Exception) {}
             cameraDevice = null
+            done.countDown()
         }
         glHandler.post {
             try {
@@ -288,7 +298,17 @@ open class CameraCaptureEngine {
                 )
             } catch (t: Throwable) {
                 Log.w(TAG, "GL shutdown raced with a frame", t)
+            } finally {
+                done.countDown()
             }
+        }
+
+        try {
+            if (!done.await(2, TimeUnit.SECONDS)) {
+                Log.w(TAG, "shutdown teardown tasks did not complete within 2s")
+            }
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
         }
 
         cameraThread.quitSafely(); glThread.quitSafely()

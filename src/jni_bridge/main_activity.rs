@@ -19,6 +19,16 @@ use slint::ComponentHandle;
 #[cfg(target_os = "android")]
 use crate::jni_bridge::helpers::{handle_back_request, jstring_to_string, process_frame};
 
+/// Local camera-capture lifecycle event. Kept separate from `mcore::Event`
+/// because mcore is an external pinned dependency. Routed via
+/// `crate::GLOB_CAMERA_EVENT_CHAN`.
+#[derive(Debug, Clone)]
+pub enum CameraEvent {
+    Started { width: u32, height: u32 },
+    Stopped,
+    Failed { reason: String },
+}
+
 #[cfg(target_os = "android")]
 pub fn native_graph_command<'local>(
     mut env: JNIEnv<'local>,
@@ -82,17 +92,17 @@ pub fn native_camera_capture_started<'local>(
     height: jni::sys::jint,
 ) {
     debug!("camera capture started {}x{}", width, height);
-    if let Err(e) = crate::GLOB_EVENT_CHAN.0.send(
-        Event::CameraCaptureStarted { width: width as u32, height: height as u32 },
+    if let Err(e) = crate::GLOB_CAMERA_EVENT_CHAN.0.send(
+        CameraEvent::Started { width: width as u32, height: height as u32 },
     ) {
-        error!(?e, "send CameraCaptureStarted");
+        error!(?e, "send CameraEvent::Started");
     }
 }
 
 #[cfg(target_os = "android")]
 pub fn native_camera_capture_stopped<'local>(_env: JNIEnv<'local>, _class: JClass<'local>) {
     debug!("camera capture stopped");
-    let _ = crate::GLOB_EVENT_CHAN.0.send(Event::CameraCaptureStopped);
+    let _ = crate::GLOB_CAMERA_EVENT_CHAN.0.send(CameraEvent::Stopped);
 }
 
 #[cfg(target_os = "android")]
@@ -103,7 +113,7 @@ pub fn native_camera_capture_failed<'local>(
 ) {
     let reason = jstring_to_string(&mut env, &reason).unwrap_or_default();
     debug!("camera capture failed: {reason}");
-    let _ = crate::GLOB_EVENT_CHAN.0.send(Event::CameraCaptureFailed { reason });
+    let _ = crate::GLOB_CAMERA_EVENT_CHAN.0.send(CameraEvent::Failed { reason });
 }
 
 #[cfg(target_os = "android")]

@@ -10,7 +10,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.util.Log
 import android.view.KeyEvent
-import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -32,6 +31,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
 
     private lateinit var displayManager: DisplayManager
     private lateinit var coordinator: ScreenCaptureCoordinator
+    private lateinit var cameraCoordinator: RealCameraCaptureCoordinator
     private lateinit var qr: QrScannerLauncher
     private lateinit var controller: SenderController
 
@@ -39,7 +39,10 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
 
     private val cameraCallbacks = object : CameraCaptureCoordinator.Callbacks {
         override fun onCameraPermissionNeeded() {
-            requestCameraPermission.launch(android.Manifest.permission.CAMERA)
+            // NativeActivity does not inherit from ComponentActivity, so we use
+            // the legacy requestPermissions + onRequestPermissionsResult path
+            // (same approach the screen-capture flow uses for its consent flow).
+            requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_CAMERA_PERM)
         }
         override fun onCameraCaptureStarted(width: Int, height: Int) {
             nativeCameraCaptureStarted(width, height)
@@ -51,11 +54,6 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
             nativeCameraCaptureFailed(reason)
         }
     }
-
-    private val requestCameraPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            cameraCoordinator.onPermissionResult(granted)
-        }
 
     private val captureCallbacks = object : ScreenCaptureCoordinator.CaptureCallbacks {
         @Suppress("DEPRECATION")
@@ -168,6 +166,24 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         super.onConfigurationChanged(newConfig)
     }
 
+    @Deprecated(
+        "NativeActivity uses the legacy requestPermissions API; ActivityResultLauncher " +
+            "is only available on ComponentActivity. Same pattern as REQ_PROJECTION.",
+    )
+    @Suppress("DEPRECATION")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_CAMERA_PERM) {
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+            cameraCoordinator.onPermissionResult(granted)
+        }
+    }
+
     @Deprecated("Use ActivityResultLauncher; see QrScannerLauncher.")
     @Suppress("DEPRECATION")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -276,6 +292,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
 
         private const val TAG = "MainActivity"
         const val REQ_PROJECTION = 1
+        const val REQ_CAMERA_PERM = 1002
         const val ACTION_MEDIA_PROJECTION_STARTED = "org.fcast.android.sender.MEDIA_PROJECTION_STARTED"
 
         @JvmStatic

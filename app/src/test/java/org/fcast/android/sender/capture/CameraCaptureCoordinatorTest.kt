@@ -1,14 +1,14 @@
 package org.fcast.android.sender.capture
 
 import android.Manifest
+import android.app.Application
 import android.content.Context
 import android.os.Looper
-import org.fcast.android.sender.ScreenCaptureService
+import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -83,10 +83,9 @@ class CameraCaptureCoordinatorTest {
 
     @Before
     fun setUp() {
-        // Use Robolectric to set up a service to obtain a fully-initialized and non-null Context.
-        val service = Robolectric.setupService(ScreenCaptureService::class.java)
-        context = service.applicationContext
-        shadowApp = shadowOf(service.application)
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        context = app
+        shadowApp = shadowOf(app)
         fakeEngine = FakeCameraCaptureEngine()
         callbacks = FakeCallbacks()
         coordinator = RealCameraCaptureCoordinator(
