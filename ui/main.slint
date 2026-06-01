@@ -88,6 +88,7 @@ import { NetworkPage }                  from "pages/network_page.slint";
 import { MixerPage }                    from "pages/mixer_page.slint";
 import { MediaBackendPage }             from "pages/media_backend_page.slint";
 import { TestFunctionalityPage }        from "pages/test_functionality_page.slint";
+import { CameraRtmpStreamPage }         from "pages/camera_rtmp_stream_page.slint";
 import { Theme } from "theme.slint";
 import { CastControlBar } from "components/control_bar.slint";
 import { InfoBanner } from "components/info_banner.slint";
@@ -179,6 +180,7 @@ export component MainWindow inherits Window {
             if PanelBridge.active == Panel.mixer:               MixerPage               { }
             if PanelBridge.active == Panel.media-backend:       MediaBackendPage        { }
             if PanelBridge.active == Panel.test-functionality:  TestFunctionalityPage   { }
+            if PanelBridge.active == Panel.camera-rtmp-stream:  CameraRtmpStreamPage    { }
         }
 
         // ── Global banner overlay ─────────────────────────────────────────────────
