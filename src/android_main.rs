@@ -1185,6 +1185,42 @@ fn android_main(app: PlatformApp) {
         log::info!("pick-test-overlay-image: stub — file picker not yet implemented");
     });
 
+    ui.global::<Bridge>().on_start_camera_rtmp_stream({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            let _ = ui.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_cam_rtmp_state(MixerState::Starting);
+            });
+
+            // Phase-1 stub: pretend the stream is up after a short delay.
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                let _ = ui.upgrade_in_event_loop(|ui| {
+                    ui.global::<Bridge>().set_cam_rtmp_state(MixerState::Running);
+                });
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_stop_camera_rtmp_stream({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            let _ = ui.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_cam_rtmp_state(MixerState::Stopping);
+            });
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                let _ = ui.upgrade_in_event_loop(|ui| {
+                    let b = ui.global::<Bridge>();
+                    b.set_cam_rtmp_state(MixerState::Idle);
+                    b.set_cam_rtmp_error_text("".into());
+                });
+            });
+        }
+    });
+
     let ui_weak = ui.as_weak();
 
     let event_tx_clone = event_tx.clone();
