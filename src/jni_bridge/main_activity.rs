@@ -75,6 +75,38 @@ pub fn native_capture_cancelled<'local>(_env: JNIEnv<'local>, _class: JClass<'lo
 }
 
 #[cfg(target_os = "android")]
+pub fn native_camera_capture_started<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    width: jni::sys::jint,
+    height: jni::sys::jint,
+) {
+    debug!("camera capture started {}x{}", width, height);
+    if let Err(e) = crate::GLOB_EVENT_CHAN.0.send(
+        Event::CameraCaptureStarted { width: width as u32, height: height as u32 },
+    ) {
+        error!(?e, "send CameraCaptureStarted");
+    }
+}
+
+#[cfg(target_os = "android")]
+pub fn native_camera_capture_stopped<'local>(_env: JNIEnv<'local>, _class: JClass<'local>) {
+    debug!("camera capture stopped");
+    let _ = crate::GLOB_EVENT_CHAN.0.send(Event::CameraCaptureStopped);
+}
+
+#[cfg(target_os = "android")]
+pub fn native_camera_capture_failed<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    reason: JString<'local>,
+) {
+    let reason = jstring_to_string(&mut env, &reason).unwrap_or_default();
+    debug!("camera capture failed: {reason}");
+    let _ = crate::GLOB_EVENT_CHAN.0.send(Event::CameraCaptureFailed { reason });
+}
+
+#[cfg(target_os = "android")]
 pub fn native_process_frame<'local>(
     env: JNIEnv<'local>,
     _class: JClass<'local>,

@@ -159,6 +159,39 @@ pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCaptureCancel
 #[cfg(target_os = "android")]
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
+pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCameraCaptureStarted<'local>(
+    env: jni::JNIEnv<'local>,
+    class: jni::objects::JClass<'local>,
+    width: jni::sys::jint,
+    height: jni::sys::jint,
+) {
+    crate::jni_bridge::main_activity::native_camera_capture_started(env, class, width, height)
+}
+
+#[cfg(target_os = "android")]
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCameraCaptureStopped<'local>(
+    env: jni::JNIEnv<'local>,
+    class: jni::objects::JClass<'local>,
+) {
+    crate::jni_bridge::main_activity::native_camera_capture_stopped(env, class)
+}
+
+#[cfg(target_os = "android")]
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCameraCaptureFailed<'local>(
+    env: jni::JNIEnv<'local>,
+    class: jni::objects::JClass<'local>,
+    reason: jni::objects::JString<'local>,
+) {
+    crate::jni_bridge::main_activity::native_camera_capture_failed(env, class, reason)
+}
+
+#[cfg(target_os = "android")]
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
 pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeProcessFrame<'local>(
     env: jni::JNIEnv<'local>,
     class: jni::objects::JClass<'local>,

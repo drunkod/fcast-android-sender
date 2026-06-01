@@ -10,11 +10,15 @@ import android.os.Bundle
 import android.os.Handler
 import android.util.Log
 import android.view.KeyEvent
+import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.fcast.android.sender.capture.CaptureConfig
 import org.fcast.android.sender.capture.ScreenCaptureCoordinator
+import org.fcast.android.sender.capture.CameraCaptureConfig
+import org.fcast.android.sender.capture.CameraCaptureCoordinator
+import org.fcast.android.sender.capture.RealCameraCaptureCoordinator
 import org.fcast.android.sender.discovery.Discoverer
 import org.fcast.android.sender.qr.QrScannerLauncher
 import org.fcast.android.sender.runtime.BackendKind
@@ -32,6 +36,26 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     private lateinit var controller: SenderController
 
     private val activityScope = MainScope()
+
+    private val cameraCallbacks = object : CameraCaptureCoordinator.Callbacks {
+        override fun onCameraPermissionNeeded() {
+            requestCameraPermission.launch(android.Manifest.permission.CAMERA)
+        }
+        override fun onCameraCaptureStarted(width: Int, height: Int) {
+            nativeCameraCaptureStarted(width, height)
+        }
+        override fun onCameraCaptureStopped() {
+            nativeCameraCaptureStopped()
+        }
+        override fun onCameraCaptureFailed(reason: String) {
+            nativeCameraCaptureFailed(reason)
+        }
+    }
+
+    private val requestCameraPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            cameraCoordinator.onPermissionResult(granted)
+        }
 
     private val captureCallbacks = object : ScreenCaptureCoordinator.CaptureCallbacks {
         @Suppress("DEPRECATION")
@@ -70,6 +94,9 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         coordinator = (application as FcastApp).graph.newCaptureCoordinator(captureCallbacks)
         coordinator.attach()
 
+        cameraCoordinator = RealCameraCaptureCoordinator(applicationContext, cameraCallbacks)
+        cameraCoordinator.attach()
+
         qr = org.fcast.android.sender.qr.RealQrScannerLauncher(this)
         controller = SenderController((application as FcastApp).graph.runtime, coordinator, qr)
 
@@ -90,6 +117,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     override fun onDestroy() {
         controller.shutdown()
         coordinator.shutdown()
+        cameraCoordinator.shutdown()
         activityScope.cancel()
         runCatching { displayManager.unregisterDisplayListener(this) }
         super.onDestroy()
@@ -211,12 +239,32 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         nativeSlintApplyState(slintState, banner, severity)
     }
 
+    // Called from Rust via JNI
+    @Suppress("unused")
+    private fun startCameraCapture(
+        cameraIdx: Int, width: Int, height: Int, fps: Int,
+        mirror: Boolean, stabilization: Boolean, zoom: Float,
+    ) {
+        cameraCoordinator.startCapture(
+            CameraCaptureConfig(cameraIdx, width, height, fps, mirror, stabilization, zoom)
+        )
+    }
+
+    // Called from Rust via JNI
+    @Suppress("unused")
+    private fun stopCameraCapture() {
+        cameraCoordinator.stopCapture()
+    }
+
     // ── JNI symbol shims ─────────────────────────────────────────────────
     // Names match Rust's Java_org_fcast_android_sender_MainActivity_native*.
     external fun nativeBackPressed()
     external fun nativeCaptureStarted()
     external fun nativeCaptureStopped()
     external fun nativeCaptureCancelled()
+    external fun nativeCameraCaptureStarted(width: Int, height: Int)
+    external fun nativeCameraCaptureStopped()
+    external fun nativeCameraCaptureFailed(reason: String)
     external fun nativeQrScanResult(result: String)
     external fun nativeSlintApplyState(state: Int, banner: String, severity: Int)
 
