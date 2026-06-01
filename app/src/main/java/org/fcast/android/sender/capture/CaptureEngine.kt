@@ -46,9 +46,9 @@ class CaptureEngine {
     private var surfaceTexture: SurfaceTexture? = null
     private var surface: Surface? = null
 
-    private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
-    private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
-    private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
+    private var eglDisplay: EGLDisplay? = null
+    private var eglContext: EGLContext? = null
+    private var eglSurface: EGLSurface? = null
 
     private var yFramebuffer: Framebuffer? = null
     private var uFramebuffer: Framebuffer? = null
@@ -313,7 +313,11 @@ class CaptureEngine {
         val uP = uProg ?: return
         val vP = vProg ?: return
 
-        if (!EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
+        val disp = eglDisplay ?: return
+        val surf = eglSurface ?: return
+        val ctx = eglContext ?: return
+
+        if (!EGL14.eglMakeCurrent(disp, surf, surf, ctx)) {
             throw RuntimeException("EGL make current failed: " + EGL14.eglGetError())
         }
 
@@ -330,7 +334,7 @@ class CaptureEngine {
         uFb.readPixels()
         vFb.readPixels()
 
-        EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+        EGL14.eglMakeCurrent(disp, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
 
         MainActivity.nativeProcessFrame(
             yFb.dims.width,
@@ -344,7 +348,10 @@ class CaptureEngine {
     @WorkerThread
     private fun releaseGl() {
         releaseGl(
-            eglDisplay, eglContext, eglSurface, oesTexId, vboId,
+            eglDisplay ?: EGL14.EGL_NO_DISPLAY,
+            eglContext ?: EGL14.EGL_NO_CONTEXT,
+            eglSurface ?: EGL14.EGL_NO_SURFACE,
+            oesTexId, vboId,
             listOf(yFramebuffer, uFramebuffer, vFramebuffer),
             listOf(yProg, uProg, vProg)
         )
@@ -352,9 +359,9 @@ class CaptureEngine {
         yFramebuffer = null
         uFramebuffer = null
         vFramebuffer = null
-        eglSurface = EGL14.EGL_NO_SURFACE
-        eglContext = EGL14.EGL_NO_CONTEXT
-        eglDisplay = EGL14.EGL_NO_DISPLAY
+        eglSurface = null
+        eglContext = null
+        eglDisplay = null
     }
 
     companion object {

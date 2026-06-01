@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * Frames delivered via MainActivity.nativeProcessFrame(w, h, Y, U, V).
  */
-class CameraCaptureEngine {
+open class CameraCaptureEngine {
 
     @Volatile private var running = false
     private val shouldCapture = AtomicBoolean(false)
@@ -47,9 +47,9 @@ class CameraCaptureEngine {
     // GL state — same fields as CaptureEngine
     private var surfaceTexture: SurfaceTexture? = null
     private var cameraSurface: Surface? = null
-    private var eglDisplay: EGLDisplay = EGL14.EGL_NO_DISPLAY
-    private var eglContext: EGLContext = EGL14.EGL_NO_CONTEXT
-    private var eglSurface: EGLSurface = EGL14.EGL_NO_SURFACE
+    private var eglDisplay: EGLDisplay? = null
+    private var eglContext: EGLContext? = null
+    private var eglSurface: EGLSurface? = null
     private var yFramebuffer: CaptureEngine.Framebuffer? = null
     private var uFramebuffer: CaptureEngine.Framebuffer? = null
     private var vFramebuffer: CaptureEngine.Framebuffer? = null
@@ -62,7 +62,7 @@ class CameraCaptureEngine {
     private var lastFrameNanos = 0L
     private var minIntervalNanos = 0L
 
-    fun start(
+    open fun start(
         context: Context,
         config: CameraCaptureConfig,
         onStarted: (width: Int, height: Int) -> Unit,
@@ -180,7 +180,7 @@ class CameraCaptureEngine {
 
         // Release the GL context on this thread before camera-thread session creation;
         // we re-acquire it inside pumpOneFrame.
-        EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE,
+        EGL14.eglMakeCurrent(eglDisplay ?: EGL14.EGL_NO_DISPLAY, EGL14.EGL_NO_SURFACE,
                              EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
 
         // 3. Create capture session via the modern SessionConfiguration API.
@@ -239,7 +239,11 @@ class CameraCaptureEngine {
         val vFb = vFramebuffer ?: return
         val yP = yProg ?: return; val uP = uProg ?: return; val vP = vProg ?: return
 
-        if (!EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
+        val disp = eglDisplay ?: return
+        val surf = eglSurface ?: return
+        val ctx = eglContext ?: return
+
+        if (!EGL14.eglMakeCurrent(disp, surf, surf, ctx)) {
             throw RuntimeException("EGL make current failed: ${EGL14.eglGetError()}")
         }
         st.updateTexImage()
@@ -250,7 +254,7 @@ class CameraCaptureEngine {
         CaptureEngine.renderToFb(oesTexId, vFb, vP, tex, vboId)
         yFb.readPixels(); uFb.readPixels(); vFb.readPixels()
 
-        EGL14.eglMakeCurrent(eglDisplay, EGL14.EGL_NO_SURFACE,
+        EGL14.eglMakeCurrent(disp, EGL14.EGL_NO_SURFACE,
                              EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
 
         MainActivity.nativeProcessFrame(
@@ -259,7 +263,7 @@ class CameraCaptureEngine {
         )
     }
 
-    fun shutdown() {
+    open fun shutdown() {
         if (!running) return
         running = false
         shouldCapture.set(false)
@@ -275,7 +279,10 @@ class CameraCaptureEngine {
                 cameraSurface?.release(); cameraSurface = null
                 surfaceTexture?.release(); surfaceTexture = null
                 CaptureEngine.releaseGl(
-                    eglDisplay, eglContext, eglSurface, oesTexId, vboId,
+                    eglDisplay ?: EGL14.EGL_NO_DISPLAY,
+                    eglContext ?: EGL14.EGL_NO_CONTEXT,
+                    eglSurface ?: EGL14.EGL_NO_SURFACE,
+                    oesTexId, vboId,
                     listOf(yFramebuffer, uFramebuffer, vFramebuffer),
                     listOf(yProg, uProg, vProg),
                 )
