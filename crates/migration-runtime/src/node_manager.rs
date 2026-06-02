@@ -354,6 +354,10 @@ impl NodeManager {
                 self.create_screen_capture_source(id, width, height, fps),
                 true,
             ),
+            Command::CreateCameraSource { .. } => (
+                CommandResult::Error("CreateCameraSource is not implemented yet".to_string()),
+                true,
+            ),
             Command::CreateDestination {
                 id,
                 family,
