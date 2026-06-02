@@ -466,9 +466,25 @@ fn android_main(app: PlatformApp) {
         );
         std::env::temp_dir()
     });
+    crate::config::init(files_dir.clone());
     let backend_lifecycle =
         std::sync::Arc::new(backend::lifecycle::BackendLifecycle::new(files_dir));
     backend_lifecycle.register(&ui);
+
+    // Hydrate the Bridge from saved CameraRtmpConfig on startup
+    let cfg = crate::config::load().camera_rtmp.unwrap_or_default();
+    let b = ui.global::<Bridge>();
+    b.set_cam_rtmp_url(cfg.url.into());
+    b.set_cam_rtmp_camera_idx(cfg.camera_idx as i32);
+    b.set_cam_rtmp_resolution_idx(cfg.resolution_idx as i32);
+    b.set_cam_rtmp_framerate_idx(cfg.framerate_idx as i32);
+    b.set_cam_rtmp_mirror(cfg.mirror);
+    b.set_cam_rtmp_stabilization(cfg.stabilization);
+    b.set_cam_rtmp_zoom(cfg.zoom.max(0.5));
+
+    if let Ok(Some(key)) = crate::secret::load("cam_rtmp_stream_key") {
+        b.set_cam_rtmp_stream_key(key.into());
+    }
 
     // ── Phase 8 / Cluster D1 — Backup / reset handlers ──────────────────
     ui.global::<Bridge>().on_export_settings({
@@ -1409,6 +1425,23 @@ fn android_main(app: PlatformApp) {
                     }
                     None => return,
                 };
+
+            let url_c = url.clone();
+            let key_c = key.clone();
+            tokio::spawn(async move {
+                let _ = crate::config::update(|c| {
+                    c.camera_rtmp = Some(crate::config::CameraRtmpConfig {
+                        url: url_c,
+                        camera_idx: cam_idx as u32,
+                        resolution_idx: res_idx as u32,
+                        framerate_idx: fps_idx as u32,
+                        mirror,
+                        stabilization: stab,
+                        zoom,
+                    });
+                });
+                let _ = crate::secret::store("cam_rtmp_stream_key", &key_c);
+            });
 
             clear_error(&ui);
             let _ = ui.upgrade_in_event_loop(|u| {

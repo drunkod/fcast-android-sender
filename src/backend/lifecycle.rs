@@ -343,6 +343,7 @@ fn read_config_from_bridge(weak: &Weak<MainWindow>) -> StoredBackendConfig {
         gstpop_api_key_alias: alias,
         gstpop_pipeline_id: bridge.get_gstpop_pipeline_id().to_string(),
         gstpop_api_key: None,
+        camera_rtmp: crate::config::load().camera_rtmp,
     }
 }
 

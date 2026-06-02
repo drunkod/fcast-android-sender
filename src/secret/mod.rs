@@ -97,6 +97,33 @@ pub fn resolve_secret_bytes(alias: &str) -> Result<SecretBytes, SecretError> {
     crate::app::app().secrets().get(alias)
 }
 
+/// Load a secret string by alias.
+pub fn load(alias: &str) -> Result<Option<String>, SecretError> {
+    if let Some(app) = crate::app::try_app() {
+        match app.secrets().get(alias) {
+            Ok(bytes) => {
+                let s = bytes
+                    .as_str()
+                    .map_err(|e| SecretError::Backend(format!("not utf-8: {e}")))?;
+                Ok(Some(s.to_owned()))
+            }
+            Err(SecretError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+/// Store a secret string by alias.
+pub fn store(alias: &str, value: &str) -> Result<(), SecretError> {
+    if let Some(app) = crate::app::try_app() {
+        app.secrets().put(alias, value.as_bytes())
+    } else {
+        Err(SecretError::Backend("App not initialized".to_owned()))
+    }
+}
+
 #[cfg(target_os = "android")]
 pub mod jni;
 

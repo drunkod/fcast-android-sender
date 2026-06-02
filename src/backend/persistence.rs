@@ -6,6 +6,31 @@ use serde::{Deserialize, Serialize};
 
 use super::BackendKind;
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct CameraRtmpConfig {
+    pub url: String,
+    pub camera_idx: u32,
+    pub resolution_idx: u32,
+    pub framerate_idx: u32,
+    pub mirror: bool,
+    pub stabilization: bool,
+    pub zoom: f32,
+}
+
+impl Default for CameraRtmpConfig {
+    fn default() -> Self {
+        Self {
+            url: "".to_owned(),
+            camera_idx: 1,
+            resolution_idx: 2,
+            framerate_idx: 1,
+            mirror: false,
+            stabilization: true,
+            zoom: 1.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct StoredBackendConfig {
     pub kind: BackendKind,
@@ -15,6 +40,8 @@ pub struct StoredBackendConfig {
     pub gstpop_pipeline_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gstpop_api_key: Option<String>,
+    #[serde(default)]
+    pub camera_rtmp: Option<CameraRtmpConfig>,
 }
 
 impl StoredBackendConfig {
@@ -25,6 +52,7 @@ impl StoredBackendConfig {
             gstpop_api_key_alias: None,
             gstpop_pipeline_id: "0".into(),
             gstpop_api_key: None,
+            camera_rtmp: None,
         }
     }
 
