@@ -424,6 +424,7 @@ export global Bridge {
 
     callback start-camera-rtmp-stream();
     callback stop-camera-rtmp-stream();
+    pure callback url-looks-valid(string) -> bool;
 
     // ── Test functionality (test-functionality panel) ────────────────────
     in-out property <int>    test-camera-idx:           1;

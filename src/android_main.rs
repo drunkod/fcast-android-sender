@@ -1382,6 +1382,10 @@ fn android_main(app: PlatformApp) {
         });
     }
 
+    ui.global::<Bridge>().on_url_looks_valid(|url: slint::SharedString| {
+        url.starts_with("rtmp://") || url.starts_with("rtmps://")
+    });
+
     ui.global::<Bridge>().on_start_camera_rtmp_stream({
         let ui_weak = ui.as_weak();
         move || {

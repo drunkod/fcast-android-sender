@@ -71,6 +71,12 @@ component CameraRtmpDestinationCard inherits Rectangle {
             edited(text) => { root.edited(); }
         }
 
+        if Bridge.cam-rtmp-url != "" && !Bridge.url-looks-valid(Bridge.cam-rtmp-url): Text {
+            text: @tr("URL must start with rtmp:// or rtmps://");
+            color: Theme.error-fg;
+            font-size: Theme.font-size-label;
+        }
+
         Text { text: @tr("Stream key"); color: Theme.text-secondary; font-size: Theme.font-size-label; }
         LineEdit {
             input-type: password;
@@ -243,14 +249,16 @@ export component CameraRtmpStreamPage inherits Rectangle {
                     Rectangle { horizontal-stretch: 1; }
                     PrimaryButton {
                         label: @tr("Go Live");
-                        enabled: Bridge.cam-rtmp-state == MixerState.idle
-                              || Bridge.cam-rtmp-state == MixerState.error;
+                        enabled: (Bridge.cam-rtmp-state == MixerState.idle
+                              || Bridge.cam-rtmp-state == MixerState.error)
+                              && Bridge.url-looks-valid(Bridge.cam-rtmp-url);
                         clicked => { Bridge.start-camera-rtmp-stream(); root.any-edits-pending = false; }
                         horizontal-stretch: 1;
                     }
                     DestructiveButton {
                         label: @tr("Stop");
                         enabled: Bridge.cam-rtmp-state == MixerState.running
+                              || Bridge.cam-rtmp-state == MixerState.stopping
                               || Bridge.cam-rtmp-state == MixerState.starting;
                         clicked => { Bridge.stop-camera-rtmp-stream(); }
                         horizontal-stretch: 1;
