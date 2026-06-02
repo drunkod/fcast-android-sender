@@ -1,6 +1,6 @@
 use crate::{
     media_bridge::StreamBridge,
-    nodes::{DestinationNode, MixerNode, ScreenCaptureNode, SourceNode, VideoGeneratorNode},
+    nodes::{CameraSourceNode, DestinationNode, MixerNode, ScreenCaptureNode, SourceNode, VideoGeneratorNode},
     protocol::{Command, CommandResult, ControlPoint, Info, NodeInfo},
 };
 use chrono::{DateTime, Utc};
@@ -23,6 +23,7 @@ struct LinkRecord {
 enum NodeRecord {
     Source(SourceNode),
     ScreenCapture(ScreenCaptureNode),
+    CameraSource(CameraSourceNode),
     Destination(DestinationNode),
     Mixer(MixerNode),
     VideoGenerator(VideoGeneratorNode),
@@ -32,7 +33,7 @@ impl NodeRecord {
     fn can_output_audio(&self) -> bool {
         match self {
             Self::Source(node) => node.audio_enabled,
-            Self::ScreenCapture(_) => false,
+            Self::ScreenCapture(_) | Self::CameraSource(_) => false,
             Self::Mixer(node) => node.audio_enabled,
             Self::VideoGenerator(node) => node.audio_enabled,
             Self::Destination(_) => false,
@@ -43,6 +44,7 @@ impl NodeRecord {
         match self {
             Self::Source(node) => node.video_enabled,
             Self::ScreenCapture(_) => true,
+            Self::CameraSource(_) => true,
             Self::Mixer(node) => node.video_enabled,
             Self::VideoGenerator(node) => node.video_enabled,
             Self::Destination(_) => false,
@@ -53,7 +55,7 @@ impl NodeRecord {
         match self {
             Self::Destination(node) => node.audio_enabled,
             Self::Mixer(node) => node.audio_enabled,
-            Self::Source(_) | Self::ScreenCapture(_) | Self::VideoGenerator(_) => false,
+            Self::Source(_) | Self::ScreenCapture(_) | Self::CameraSource(_) | Self::VideoGenerator(_) => false,
         }
     }
 
@@ -61,7 +63,7 @@ impl NodeRecord {
         match self {
             Self::Destination(node) => node.video_enabled,
             Self::Mixer(node) => node.video_enabled,
-            Self::Source(_) | Self::ScreenCapture(_) | Self::VideoGenerator(_) => false,
+            Self::Source(_) | Self::ScreenCapture(_) | Self::CameraSource(_) | Self::VideoGenerator(_) => false,
         }
     }
 
@@ -69,6 +71,7 @@ impl NodeRecord {
         match self {
             Self::Source(node) => node.as_info(),
             Self::ScreenCapture(node) => node.as_info(),
+            Self::CameraSource(node) => node.as_info(),
             Self::Destination(node) => node.as_info(),
             Self::Mixer(node) => node.as_info(),
             Self::VideoGenerator(node) => node.as_compatible_source_info(),
@@ -83,6 +86,7 @@ impl NodeRecord {
         match self {
             Self::Source(node) => node.schedule(cue_time, end_time),
             Self::ScreenCapture(node) => node.schedule(cue_time, end_time),
+            Self::CameraSource(node) => node.schedule(cue_time, end_time),
             Self::Destination(node) => node.schedule(cue_time, end_time),
             Self::Mixer(node) => node.schedule(cue_time, end_time),
             Self::VideoGenerator(node) => node.schedule(cue_time, end_time),
@@ -93,6 +97,7 @@ impl NodeRecord {
         match self {
             Self::Source(node) => node.stop(),
             Self::ScreenCapture(node) => node.stop(),
+            Self::CameraSource(node) => node.stop(),
             Self::Destination(node) => node.stop(),
             Self::Mixer(node) => node.stop(),
             Self::VideoGenerator(node) => node.stop(),
@@ -103,6 +108,7 @@ impl NodeRecord {
         match self {
             Self::Source(node) => node.mark_error(message),
             Self::ScreenCapture(node) => node.mark_error(message),
+            Self::CameraSource(node) => node.mark_error(message),
             Self::Destination(node) => node.mark_error(message),
             Self::Mixer(node) => node.mark_error(message),
             Self::VideoGenerator(node) => node.mark_error(message),
@@ -113,6 +119,7 @@ impl NodeRecord {
         match self {
             Self::Source(node) => node.add_consumer_link(link_id, audio, video),
             Self::ScreenCapture(node) => node.add_consumer_link(link_id, audio, video),
+            Self::CameraSource(node) => node.add_consumer_link(link_id, audio, video),
             Self::Mixer(node) => node.connect_output_consumer(link_id, audio, video),
             Self::VideoGenerator(node) => node.add_consumer_link(link_id, audio, video),
             Self::Destination(_) => {}
@@ -123,6 +130,7 @@ impl NodeRecord {
         match self {
             Self::Source(node) => node.remove_consumer_link(link_id),
             Self::ScreenCapture(node) => node.remove_consumer_link(link_id),
+            Self::CameraSource(node) => node.remove_consumer_link(link_id),
             Self::Mixer(node) => node.disconnect_output_consumer(link_id),
             Self::VideoGenerator(node) => node.remove_consumer_link(link_id),
             Self::Destination(_) => {}
@@ -133,6 +141,7 @@ impl NodeRecord {
         let result = match self {
             Self::Source(node) => node.refresh(),
             Self::ScreenCapture(node) => node.refresh(),
+            Self::CameraSource(node) => node.refresh(),
             Self::Destination(node) => node.refresh(),
             Self::Mixer(node) => node.refresh(),
             Self::VideoGenerator(node) => node.refresh(),
@@ -146,7 +155,7 @@ impl NodeRecord {
     fn output_audio_appsink(&self) -> Option<AppSink> {
         match self {
             Self::Source(node) => node.live_audio_appsink(),
-            Self::ScreenCapture(_) => None,
+            Self::ScreenCapture(_) | Self::CameraSource(_) => None,
             Self::Mixer(node) => node.live_audio_output_appsink(),
             Self::VideoGenerator(_) | Self::Destination(_) => None,
         }
@@ -156,6 +165,7 @@ impl NodeRecord {
         match self {
             Self::Source(node) => node.live_video_appsink(),
             Self::ScreenCapture(node) => node.live_video_appsink(),
+            Self::CameraSource(node) => node.live_video_appsink(),
             Self::Mixer(node) => node.live_video_output_appsink(),
             Self::VideoGenerator(node) => node.live_video_appsink(),
             Self::Destination(_) => None,
@@ -166,7 +176,7 @@ impl NodeRecord {
         match self {
             Self::Destination(node) => node.live_audio_appsrc(),
             Self::Mixer(node) => node.live_slot_audio_appsrc(link_id),
-            Self::Source(_) | Self::ScreenCapture(_) | Self::VideoGenerator(_) => None,
+            Self::Source(_) | Self::ScreenCapture(_) | Self::CameraSource(_) | Self::VideoGenerator(_) => None,
         }
     }
 
@@ -174,7 +184,7 @@ impl NodeRecord {
         match self {
             Self::Destination(node) => node.live_video_appsrc(),
             Self::Mixer(node) => node.live_slot_video_appsrc(link_id),
-            Self::Source(_) | Self::ScreenCapture(_) | Self::VideoGenerator(_) => None,
+            Self::Source(_) | Self::ScreenCapture(_) | Self::CameraSource(_) | Self::VideoGenerator(_) => None,
         }
     }
 }
@@ -354,8 +364,26 @@ impl NodeManager {
                 self.create_screen_capture_source(id, width, height, fps),
                 true,
             ),
-            Command::CreateCameraSource { .. } => (
-                CommandResult::Error("CreateCameraSource is not implemented yet".to_string()),
+            Command::CreateCameraSource {
+                id,
+                camera_idx,
+                width,
+                height,
+                fps,
+                mirror,
+                stabilization,
+                zoom,
+            } => (
+                self.create_camera_source(
+                    id,
+                    camera_idx,
+                    width,
+                    height,
+                    fps,
+                    mirror,
+                    stabilization,
+                    zoom,
+                ),
                 true,
             ),
             Command::CreateDestination {
@@ -494,6 +522,51 @@ impl NodeManager {
         CommandResult::Success
     }
 
+    fn create_camera_source(
+        &mut self,
+        id: String,
+        camera_idx: u32,
+        width: u32,
+        height: u32,
+        fps: u32,
+        mirror: bool,
+        stabilization: bool,
+        zoom: f32,
+    ) -> CommandResult {
+        if let Err(err) = self.ensure_unique_id(&id) {
+            return CommandResult::Error(err);
+        }
+        if id.is_empty() {
+            return CommandResult::Error("CameraSource requires a non-empty id".to_string());
+        }
+        if width == 0 || height == 0 || fps == 0 {
+            return CommandResult::Error(format!(
+                "CameraSource {id} requires non-zero width/height/fps"
+            ));
+        }
+        let Some(frame_pair) = self.frame_pair.clone() else {
+            return CommandResult::Error(
+                "CameraSource requires runtime handles to be installed".to_string(),
+            );
+        };
+
+        self.nodes.insert(
+            id.clone(),
+            NodeRecord::CameraSource(CameraSourceNode::new(
+                frame_pair,
+                id,
+                camera_idx,
+                width,
+                height,
+                fps,
+                mirror,
+                stabilization,
+                zoom,
+            )),
+        );
+        CommandResult::Success
+    }
+
     fn create_destination(
         &mut self,
         id: String,
@@ -585,6 +658,7 @@ impl NodeManager {
             Some(
                 NodeRecord::Source(_)
                 | NodeRecord::ScreenCapture(_)
+                | NodeRecord::CameraSource(_)
                 | NodeRecord::VideoGenerator(_),
             ) => Err(format!("Node {sink_id} is not a consumer")),
             None => Err(format!("No consumer with id {sink_id}")),
@@ -628,6 +702,7 @@ impl NodeManager {
                 NodeRecord::Mixer(mixer) => mixer.disconnect_input_slot(link_id),
                 NodeRecord::Source(_)
                 | NodeRecord::ScreenCapture(_)
+                | NodeRecord::CameraSource(_)
                 | NodeRecord::VideoGenerator(_) => {}
             }
         }
@@ -1046,6 +1121,142 @@ mod tests {
                 assert_eq!(node.fps, 30);
             }
             other => panic!("expected NodeRecord::ScreenCapture, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_camera_source_succeeds() {
+        let mut manager = started_manager();
+
+        assert!(matches!(
+            manager.dispatch(Command::CreateCameraSource {
+                id: "cam-1".to_string(),
+                camera_idx: 2,
+                width: 1280,
+                height: 720,
+                fps: 30,
+                mirror: true,
+                stabilization: false,
+                zoom: 2.5,
+            }),
+            CommandResult::Success
+        ));
+
+        match manager.nodes.get("cam-1") {
+            Some(NodeRecord::CameraSource(node)) => {
+                assert_eq!(node.id, "cam-1");
+                assert_eq!(node.camera_idx, 2);
+                assert_eq!(node.width, 1280);
+                assert_eq!(node.height, 720);
+                assert_eq!(node.fps, 30);
+                assert!(node.mirror);
+                assert!(!node.stabilization);
+                assert_eq!(node.zoom, 2.5);
+                assert_eq!(node.state, State::Started, "last error: {:?}", node.last_error);
+            }
+            other => panic!("expected NodeRecord::CameraSource, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn camera_source_validates_dimensions() {
+        let mut manager = started_manager();
+
+        for (width, height, fps, label) in [
+            (0u32, 720u32, 30u32, "zero width"),
+            (1280u32, 0u32, 30u32, "zero height"),
+            (1280u32, 720u32, 0u32, "zero fps"),
+        ] {
+            expect_error(
+                manager.dispatch(Command::CreateCameraSource {
+                    id: format!("cam-{label}"),
+                    camera_idx: 1,
+                    width,
+                    height,
+                    fps,
+                    mirror: false,
+                    stabilization: true,
+                    zoom: 1.0,
+                }),
+                "requires non-zero width/height/fps",
+            );
+        }
+    }
+
+    #[test]
+    fn camera_source_rejects_duplicate_id() {
+        let mut manager = started_manager();
+        let make_command = || Command::CreateCameraSource {
+            id: "cam-1".to_string(),
+            camera_idx: 1,
+            width: 1280,
+            height: 720,
+            fps: 30,
+            mirror: false,
+            stabilization: true,
+            zoom: 1.0,
+        };
+
+        assert!(matches!(
+            manager.dispatch(make_command()),
+            CommandResult::Success
+        ));
+        expect_error(
+            manager.dispatch(make_command()),
+            "already exists with id cam-1",
+        );
+    }
+
+    #[test]
+    fn camera_source_appears_in_get_info() {
+        let mut manager = started_manager();
+        assert!(matches!(
+            manager.dispatch(Command::CreateCameraSource {
+                id: "cam-1".to_string(),
+                camera_idx: 1,
+                width: 1280,
+                height: 720,
+                fps: 30,
+                mirror: false,
+                stabilization: true,
+                zoom: 1.0,
+            }),
+            CommandResult::Success
+        ));
+
+        let result = manager.dispatch(Command::GetInfo { id: None });
+        match result {
+            CommandResult::Info(info) => match info.nodes.get("cam-1") {
+                Some(NodeInfo::Source(source)) => {
+                    assert_eq!(source.uri, "camera://1280x720@30fps");
+                    assert_eq!(source.state, State::Started);
+                    assert_eq!(source.audio_consumer_slot_ids, None);
+                }
+                other => panic!("expected NodeInfo::Source, got {other:?}"),
+            },
+            other => panic!("expected CommandResult::Info, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn camera_source_uses_serde_defaults_via_dispatch() {
+        let cmd: Command =
+            serde_json::from_str(r#"{"createcamerasource":{"id":"cam-default"}}"#).unwrap();
+
+        let mut manager = started_manager();
+        assert!(matches!(manager.dispatch(cmd), CommandResult::Success));
+
+        match manager.nodes.get("cam-default") {
+            Some(NodeRecord::CameraSource(node)) => {
+                assert_eq!(node.camera_idx, 1);
+                assert_eq!(node.width, 1920);
+                assert_eq!(node.height, 1080);
+                assert_eq!(node.fps, 30);
+                assert!(!node.mirror);
+                assert!(node.stabilization);
+                assert_eq!(node.zoom, 1.0);
+            }
+            other => panic!("expected NodeRecord::CameraSource, got {other:?}"),
         }
     }
 
