@@ -1,3 +1,10 @@
+#![allow(
+    clippy::large_enum_variant,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::question_mark,
+    dead_code
+)]
 //! migration-runtime — extracted from `android-sender`.
 
 pub mod frame_pair;

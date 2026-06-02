@@ -11,19 +11,14 @@ use gstpop::{
     server::{ServerConfig, ServerHandle},
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum EmbeddedState {
+    #[default]
     Stopped,
     Starting,
     Running,
     Error,
-}
-
-impl Default for EmbeddedState {
-    fn default() -> Self {
-        Self::Stopped
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]

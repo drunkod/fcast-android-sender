@@ -1,5 +1,6 @@
 package org.fcast.android.sender.capture
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.SurfaceTexture
 import android.hardware.camera2.*
@@ -31,7 +32,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   - glThread / glHandler ................ EGL + shader pipeline (same as CaptureEngine)
  *
  * Frames delivered via MainActivity.nativeProcessFrame(w, h, Y, U, V).
+ *
  */
+@SuppressLint("MissingPermission", "NewApi")
 open class CameraCaptureEngine {
 
     @Volatile private var running = false

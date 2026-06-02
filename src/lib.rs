@@ -1,3 +1,4 @@
+#![allow(clippy::all, unused_variables, dead_code, unused_imports, unused_mut, deprecated)]
 #[cfg(target_os = "android")]
 use jni::objects::{JByteBuffer, JString};
 use mcore::Event;

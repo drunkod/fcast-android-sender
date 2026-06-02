@@ -20,7 +20,7 @@ fn main() {
     }
 
     let proj_root = env::current_dir().unwrap();
-    let android_ndk_home = match env::var("ANDROID_NDK_ROOT")
+    let _android_ndk_home = match env::var("ANDROID_NDK_ROOT")
         .or_else(|_| env::var("ANDROID_NDK_HOME"))
     {
         Ok(v) => v,
@@ -41,7 +41,7 @@ fn main() {
         }
     };
 
-    let (gst_target_abi, android_target_abi, clang_target_abi) = match target.as_str() {
+    let (gst_target_abi, android_target_abi, _clang_target_abi) = match target.as_str() {
         "aarch64-linux-android" => ("arm64", "arm64-v8a", "aarch64"),
         "x86_64-linux-android" => ("x86_64", "x86_64", "x86_64"),
         "i686-linux-android" => ("x86", "x86", "i686"),
@@ -51,7 +51,7 @@ fn main() {
 
     let gstreamer_root = gst_libs;
 
-    let host_tag = if cfg!(target_os = "macos") {
+    let _host_tag = if cfg!(target_os = "macos") {
         "darwin-x86_64"
     } else if cfg!(target_os = "windows") {
         "windows-x86_64"

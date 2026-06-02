@@ -127,6 +127,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         super.onStop()
     }
 
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun onBackPressed() {
         Log.d(TAG, "onBackPressed")
         nativeBackPressed()
