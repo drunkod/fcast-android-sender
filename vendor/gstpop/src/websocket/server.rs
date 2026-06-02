@@ -31,7 +31,12 @@ use super::pipeline::SnapshotParams;
 use super::protocol::Request;
 use super::{CLIENT_MESSAGE_BUFFER, MAX_CONCURRENT_CLIENTS};
 
-/// Maximum WebSocket message/frame size (8 MB) to accommodate raw video frames
+/// Maximum WebSocket message/frame size (8 MB).
+///
+/// Sized to accommodate raw video frames pushed via the binary `push_buffer`
+/// path (see [`push_buffer_wire`](super::push_buffer_wire)). I420 1080p is
+/// ~3 MB per frame and 2160p is ~12 MB; 8 MB covers up to ~1440p in a single
+/// frame and is also the upper bound for any other text/binary WS message.
 const MAX_WS_MESSAGE_SIZE: usize = 8 * 1024 * 1024;
 
 fn ws_config() -> WebSocketConfig {
@@ -286,42 +291,29 @@ async fn handle_connection(
                 }
             }
             Ok(Message::Binary(bin)) => {
-                if bin.len() >= 16 {
-                    let mut offset = 0;
-                    if let Ok(pid_len_bytes) = bin[offset..offset+4].try_into() {
-                        let pid_len = u32::from_be_bytes(pid_len_bytes) as usize;
-                        offset += 4;
-                        if offset + pid_len <= bin.len() {
-                            if let Ok(pipeline_id) = std::str::from_utf8(&bin[offset..offset+pid_len]) {
-                                let pipeline_id = pipeline_id.to_string();
-                                offset += pid_len;
-                                if offset + 4 <= bin.len() {
-                                    if let Ok(elem_len_bytes) = bin[offset..offset+4].try_into() {
-                                        let elem_len = u32::from_be_bytes(elem_len_bytes) as usize;
-                                        offset += 4;
-                                        if offset + elem_len <= bin.len() {
-                                            if let Ok(elem_name) = std::str::from_utf8(&bin[offset..offset+elem_len]) {
-                                                let elem_name = elem_name.to_string();
-                                                offset += elem_len;
-                                                if offset + 8 <= bin.len() {
-                                                    if let Ok(pts_bytes) = bin[offset..offset+8].try_into() {
-                                                        let pts_ns = u64::from_be_bytes(pts_bytes);
-                                                        offset += 8;
-                                                        let raw_data = bin[offset..].to_vec();
-                                                        let manager_clone = Arc::clone(&manager);
-                                                        tokio::spawn(async move {
-                                                            if let Err(e) = manager_clone.push_buffer(&pipeline_id, &elem_name, raw_data, pts_ns).await {
-                                                                error!("Failed to push buffer from ws binary frame: {}", e);
-                                                            }
-                                                        });
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                match super::push_buffer_wire::decode(&bin) {
+                    Ok(decoded) => {
+                        let pipeline_id = decoded.pipeline_id.to_string();
+                        let element_name = decoded.element_name.to_string();
+                        let pts_ns = decoded.pts_ns;
+                        let payload = decoded.payload.to_vec();
+                        let manager_clone = Arc::clone(&manager);
+                        tokio::spawn(async move {
+                            if let Err(e) = manager_clone
+                                .push_buffer(&pipeline_id, &element_name, payload, pts_ns)
+                                .await
+                            {
+                                error!("Failed to push buffer from ws binary frame: {}", e);
                             }
-                        }
+                        });
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Discarding malformed push_buffer frame ({} bytes) from {}: {:?}",
+                            bin.len(),
+                            addr,
+                            e
+                        );
                     }
                 }
             }

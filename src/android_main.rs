@@ -24,11 +24,21 @@ use crate::platform::platform_app::{spawn_recording_ticker, PlatformApp, Recordi
 
 const LEGACY_COMMAND_BIND_ADDR: &str = "0.0.0.0:8080";
 
+use gstpop_runtime::GstPopClient;
 use once_cell::sync::Lazy;
 use std::sync::atomic::AtomicBool;
 
-static GSTPOP_STREAM_ACTIVE: Lazy<Mutex<Option<Arc<AtomicBool>>>> = Lazy::new(|| Mutex::new(None));
-static CAM_RTMP_GSTPOP_PID: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+/// Embedded gst-pop daemon WebSocket port for the camera RTMP path.
+const CAM_RTMP_GSTPOP_PORT: u16 = 9000;
+
+struct CamRtmpGstPopSession {
+    pid: String,
+    client: Arc<GstPopClient>,
+    active: Arc<AtomicBool>,
+}
+
+static CAM_RTMP_GSTPOP_SESSION: Lazy<Mutex<Option<CamRtmpGstPopSession>>> =
+    Lazy::new(|| Mutex::new(None));
 
 // TODO: handle errs
 #[cfg(target_os = "android")]
@@ -1209,6 +1219,28 @@ fn android_main(app: PlatformApp) {
         });
     }
 
+    fn clear_error(ui: &slint::Weak<MainWindow>) {
+        let _ = ui.upgrade_in_event_loop(|u| {
+            u.global::<Bridge>().set_cam_rtmp_error_text("".into());
+        });
+    }
+
+    async fn teardown_gstpop_session(session: CamRtmpGstPopSession) {
+        session.active.store(false, Ordering::SeqCst);
+        crate::FRAME_PAIR.cond.notify_all();
+        let _ = session
+            .client
+            .call("stop", serde_json::json!({ "pipeline_id": session.pid }))
+            .await;
+        let _ = session
+            .client
+            .call(
+                "remove_pipeline",
+                serde_json::json!({ "pipeline_id": session.pid }),
+            )
+            .await;
+    }
+
     async fn start_camera_rtmp_via_gstpop(
         ui: slint::Weak<MainWindow>,
         cam_idx: u32,
@@ -1220,9 +1252,9 @@ fn android_main(app: PlatformApp) {
         stab: bool,
         zoom: f32,
     ) {
-        use gstpop_runtime::{GstPopClient, EmbeddedState};
+        use gstpop_runtime::EmbeddedState;
 
-        let status = gstpop_runtime::start_embedded(9000).await;
+        let status = gstpop_runtime::start_embedded(CAM_RTMP_GSTPOP_PORT).await;
         if !matches!(status.state, EmbeddedState::Running) {
             let msg = format!("gst-pop daemon not running: {:?}", status.last_error);
             return fail(&ui, msg);
@@ -1230,7 +1262,7 @@ fn android_main(app: PlatformApp) {
 
         let ws_url = format!("ws://127.0.0.1:{}/", status.port);
         let client = match GstPopClient::connect(&ws_url, None).await {
-            Ok(c) => c,
+            Ok(c) => Arc::new(c),
             Err(e) => return fail(&ui, format!("client connect: {e:#}")),
         };
 
@@ -1247,7 +1279,13 @@ fn android_main(app: PlatformApp) {
             w = width, h = height, fps = fps, url = full_url, sink = sink, flip = flip,
         );
 
-        let pid_val = match client.call("create_pipeline", serde_json::json!({ "description": pipeline_desc })).await {
+        let pid_val = match client
+            .call(
+                "create_pipeline",
+                serde_json::json!({ "description": pipeline_desc }),
+            )
+            .await
+        {
             Ok(val) => val,
             Err(e) => return fail(&ui, format!("create_pipeline: {e:#}")),
         };
@@ -1255,26 +1293,45 @@ fn android_main(app: PlatformApp) {
             Some(p) => p.to_string(),
             None => return fail(&ui, "create_pipeline response missing pipeline_id".to_string()),
         };
-        *CAM_RTMP_GSTPOP_PID.lock() = Some(pid.clone());
 
-        if let Err(e) = client.call("play", serde_json::json!({ "pipeline_id": pid })).await {
+        if let Err(e) = client
+            .call("play", serde_json::json!({ "pipeline_id": pid }))
+            .await
+        {
+            let _ = client
+                .call(
+                    "remove_pipeline",
+                    serde_json::json!({ "pipeline_id": pid }),
+                )
+                .await;
             return fail(&ui, format!("play: {e:#}"));
         }
 
         // Open Camera2 via the JNI upcall.
-        if let Err(e) = upcall_start_camera_capture(
-            cam_idx, width, height, fps, mirror, stab, zoom,
-        ) {
-            let _ = client.call("remove_pipeline", serde_json::json!({ "pipeline_id": pid })).await;
+        if let Err(e) =
+            upcall_start_camera_capture(cam_idx, width, height, fps, mirror, stab, zoom)
+        {
+            let _ = client
+                .call("stop", serde_json::json!({ "pipeline_id": pid }))
+                .await;
+            let _ = client
+                .call(
+                    "remove_pipeline",
+                    serde_json::json!({ "pipeline_id": pid }),
+                )
+                .await;
             return fail(&ui, format!("startCameraCapture: {e}"));
         }
 
-        // Spawn the frame pump task
         let active_flag = Arc::new(AtomicBool::new(true));
-        *GSTPOP_STREAM_ACTIVE.lock() = Some(active_flag.clone());
+        *CAM_RTMP_GSTPOP_SESSION.lock() = Some(CamRtmpGstPopSession {
+            pid: pid.clone(),
+            client: client.clone(),
+            active: active_flag.clone(),
+        });
 
         let frame_pair = crate::FRAME_PAIR.clone();
-        let client_clone = Arc::new(client);
+        let client_clone = client.clone();
         let pid_clone = pid.clone();
 
         tokio::spawn(async move {
@@ -1288,7 +1345,9 @@ fn android_main(app: PlatformApp) {
                         if !active_flag.load(Ordering::SeqCst) {
                             return;
                         }
-                        frame_pair.cond.wait_for(&mut frame_guard, std::time::Duration::from_millis(50));
+                        frame_pair
+                            .cond
+                            .wait_for(&mut frame_guard, std::time::Duration::from_millis(50));
                     }
                     let vframe = (*frame_guard).take().unwrap();
                     let buffer = vframe.buffer().to_owned();
@@ -1297,7 +1356,10 @@ fn android_main(app: PlatformApp) {
                     (mapped.to_vec(), pts_ns)
                 };
 
-                if let Err(e) = client_clone.push_buffer(&pid_clone, "camera-src", &buffer_data.0, buffer_data.1).await {
+                if let Err(e) = client_clone
+                    .push_buffer(&pid_clone, "camera-src", &buffer_data.0, buffer_data.1)
+                    .await
+                {
                     tracing::error!("gst-pop push_buffer failed: {}", e);
                     break;
                 }
@@ -1308,20 +1370,9 @@ fn android_main(app: PlatformApp) {
     async fn stop_camera_rtmp_via_gstpop(ui: slint::Weak<MainWindow>) {
         let _ = upcall_stop_camera_capture();
 
-        if let Some(flag) = GSTPOP_STREAM_ACTIVE.lock().take() {
-            flag.store(false, Ordering::SeqCst);
-        }
-        crate::FRAME_PAIR.cond.notify_all();
-
-        let pid = CAM_RTMP_GSTPOP_PID.lock().take();
-        if let Some(pid) = pid {
-            let port = 9000;
-            let ws_url = format!("ws://127.0.0.1:{}/", port);
-            use gstpop_runtime::GstPopClient;
-            if let Ok(client) = GstPopClient::connect(&ws_url, None).await {
-                let _ = client.call("stop", serde_json::json!({ "pipeline_id": pid })).await;
-                let _ = client.call("remove_pipeline", serde_json::json!({ "pipeline_id": pid })).await;
-            }
+        let session = CAM_RTMP_GSTPOP_SESSION.lock().take();
+        if let Some(session) = session {
+            teardown_gstpop_session(session).await;
         }
 
         let _ = ui.upgrade_in_event_loop(|u| {
@@ -1355,6 +1406,7 @@ fn android_main(app: PlatformApp) {
                     None => return,
                 };
 
+            clear_error(&ui);
             let _ = ui.upgrade_in_event_loop(|u| {
                 u.global::<Bridge>().set_cam_rtmp_state(MixerState::Starting);
             });
@@ -1513,30 +1565,17 @@ fn android_main(app: PlatformApp) {
                             tear_down_migration();
                         }
                         Some(MediaBackendKind::GstPop) => {
-                            if let Some(flag) = GSTPOP_STREAM_ACTIVE.lock().take() {
-                                flag.store(false, Ordering::SeqCst);
-                            }
-                            crate::FRAME_PAIR.cond.notify_all();
-                            let pid = CAM_RTMP_GSTPOP_PID.lock().take();
-                            if let Some(pid) = pid {
+                            let session = CAM_RTMP_GSTPOP_SESSION.lock().take();
+                            if let Some(session) = session {
                                 tokio::spawn(async move {
-                                    let ws_url = "ws://127.0.0.1:9000/";
-                                    use gstpop_runtime::GstPopClient;
-                                    if let Ok(client) = GstPopClient::connect(ws_url, None).await {
-                                        let _ = client.call("stop", serde_json::json!({ "pipeline_id": pid })).await;
-                                        let _ = client.call("remove_pipeline", serde_json::json!({ "pipeline_id": pid })).await;
-                                    }
+                                    teardown_gstpop_session(session).await;
                                 });
                             }
                         }
                         None => {}
                     }
                     
-                    let _ = cam_event_ui_weak.upgrade_in_event_loop(move |u| {
-                        let b = u.global::<Bridge>();
-                        b.set_cam_rtmp_error_text(reason.into());
-                        b.set_cam_rtmp_state(MixerState::Error);
-                    });
+                    fail(&cam_event_ui_weak, reason);
                 }
             },
             Err(_) => break,

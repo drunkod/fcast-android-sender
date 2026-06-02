@@ -9,6 +9,7 @@
 pub mod manager;
 pub mod pipeline;
 pub mod protocol;
+pub mod push_buffer_wire;
 pub mod server;
 
 pub use manager::ManagerInterface;
