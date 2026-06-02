@@ -141,4 +141,20 @@ impl GstPopClient {
         let mut guard = self.write.lock().await;
         let _ = guard.send(Message::Close(None)).await;
     }
+
+    pub async fn push_buffer(&self, pipeline_id: &str, elem_name: &str, data: &[u8], pts_ns: u64) -> Result<()> {
+        let pid_bytes = pipeline_id.as_bytes();
+        let elem_bytes = elem_name.as_bytes();
+        let mut msg_bytes = Vec::with_capacity(4 + pid_bytes.len() + 4 + elem_bytes.len() + 8 + data.len());
+        msg_bytes.extend_from_slice(&(pid_bytes.len() as u32).to_be_bytes());
+        msg_bytes.extend_from_slice(pid_bytes);
+        msg_bytes.extend_from_slice(&(elem_bytes.len() as u32).to_be_bytes());
+        msg_bytes.extend_from_slice(elem_bytes);
+        msg_bytes.extend_from_slice(&pts_ns.to_be_bytes());
+        msg_bytes.extend_from_slice(data);
+        
+        let mut guard = self.write.lock().await;
+        guard.send(Message::Binary(msg_bytes.into())).await.context("ws send binary")?;
+        Ok(())
+    }
 }

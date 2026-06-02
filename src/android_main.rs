@@ -24,6 +24,12 @@ use crate::platform::platform_app::{spawn_recording_ticker, PlatformApp, Recordi
 
 const LEGACY_COMMAND_BIND_ADDR: &str = "0.0.0.0:8080";
 
+use once_cell::sync::Lazy;
+use std::sync::atomic::AtomicBool;
+
+static GSTPOP_STREAM_ACTIVE: Lazy<Mutex<Option<Arc<AtomicBool>>>> = Lazy::new(|| Mutex::new(None));
+static CAM_RTMP_GSTPOP_PID: Lazy<Mutex<Option<String>>> = Lazy::new(|| Mutex::new(None));
+
 // TODO: handle errs
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
@@ -1203,16 +1209,139 @@ fn android_main(app: PlatformApp) {
         });
     }
 
+    async fn start_camera_rtmp_via_gstpop(
+        ui: slint::Weak<MainWindow>,
+        cam_idx: u32,
+        width: u32,
+        height: u32,
+        fps: u32,
+        full_url: String,
+        mirror: bool,
+        stab: bool,
+        zoom: f32,
+    ) {
+        use gstpop_runtime::{GstPopClient, EmbeddedState};
+
+        let status = gstpop_runtime::start_embedded(9000).await;
+        if !matches!(status.state, EmbeddedState::Running) {
+            let msg = format!("gst-pop daemon not running: {:?}", status.last_error);
+            return fail(&ui, msg);
+        }
+
+        let ws_url = format!("ws://127.0.0.1:{}/", status.port);
+        let client = match GstPopClient::connect(&ws_url, None).await {
+            Ok(c) => c,
+            Err(e) => return fail(&ui, format!("client connect: {e:#}")),
+        };
+
+        let sink = migration_runtime::nodes::destination::pick_rtmp_sink();
+        let flip = if mirror { "videoflip method=horizontal-flip ! " } else { "" };
+
+        let pipeline_desc = format!(
+            "appsrc name=camera-src format=time is-live=true do-timestamp=true \
+             caps=video/x-raw,format=I420,width={w},height={h},framerate={fps}/1 \
+             ! videoconvert ! {flip}\
+             x264enc bitrate=4000 speed-preset=ultrafast tune=zerolatency \
+             ! h264parse ! queue ! flvmux streamable=true \
+             ! {sink} location={url}",
+            w = width, h = height, fps = fps, url = full_url, sink = sink, flip = flip,
+        );
+
+        let pid_val = match client.call("create_pipeline", serde_json::json!({ "description": pipeline_desc })).await {
+            Ok(val) => val,
+            Err(e) => return fail(&ui, format!("create_pipeline: {e:#}")),
+        };
+        let pid = match pid_val.get("pipeline_id").and_then(|v| v.as_str()) {
+            Some(p) => p.to_string(),
+            None => return fail(&ui, "create_pipeline response missing pipeline_id".to_string()),
+        };
+        *CAM_RTMP_GSTPOP_PID.lock() = Some(pid.clone());
+
+        if let Err(e) = client.call("play", serde_json::json!({ "pipeline_id": pid })).await {
+            return fail(&ui, format!("play: {e:#}"));
+        }
+
+        // Open Camera2 via the JNI upcall.
+        if let Err(e) = upcall_start_camera_capture(
+            cam_idx, width, height, fps, mirror, stab, zoom,
+        ) {
+            let _ = client.call("remove_pipeline", serde_json::json!({ "pipeline_id": pid })).await;
+            return fail(&ui, format!("startCameraCapture: {e}"));
+        }
+
+        // Spawn the frame pump task
+        let active_flag = Arc::new(AtomicBool::new(true));
+        *GSTPOP_STREAM_ACTIVE.lock() = Some(active_flag.clone());
+
+        let frame_pair = crate::FRAME_PAIR.clone();
+        let client_clone = Arc::new(client);
+        let pid_clone = pid.clone();
+
+        tokio::spawn(async move {
+            loop {
+                if !active_flag.load(Ordering::SeqCst) {
+                    break;
+                }
+                let buffer_data = {
+                    let mut frame_guard = frame_pair.frame.lock();
+                    while (*frame_guard).is_none() {
+                        if !active_flag.load(Ordering::SeqCst) {
+                            return;
+                        }
+                        frame_pair.cond.wait_for(&mut frame_guard, std::time::Duration::from_millis(50));
+                    }
+                    let vframe = (*frame_guard).take().unwrap();
+                    let buffer = vframe.buffer().to_owned();
+                    let pts_ns = buffer.pts().map(|p| p.nseconds()).unwrap_or(0);
+                    let mapped = buffer.map_readable().unwrap();
+                    (mapped.to_vec(), pts_ns)
+                };
+
+                if let Err(e) = client_clone.push_buffer(&pid_clone, "camera-src", &buffer_data.0, buffer_data.1).await {
+                    tracing::error!("gst-pop push_buffer failed: {}", e);
+                    break;
+                }
+            }
+        });
+    }
+
+    async fn stop_camera_rtmp_via_gstpop(ui: slint::Weak<MainWindow>) {
+        let _ = upcall_stop_camera_capture();
+
+        if let Some(flag) = GSTPOP_STREAM_ACTIVE.lock().take() {
+            flag.store(false, Ordering::SeqCst);
+        }
+        crate::FRAME_PAIR.cond.notify_all();
+
+        let pid = CAM_RTMP_GSTPOP_PID.lock().take();
+        if let Some(pid) = pid {
+            let port = 9000;
+            let ws_url = format!("ws://127.0.0.1:{}/", port);
+            use gstpop_runtime::GstPopClient;
+            if let Ok(client) = GstPopClient::connect(&ws_url, None).await {
+                let _ = client.call("stop", serde_json::json!({ "pipeline_id": pid })).await;
+                let _ = client.call("remove_pipeline", serde_json::json!({ "pipeline_id": pid })).await;
+            }
+        }
+
+        let _ = ui.upgrade_in_event_loop(|u| {
+            let b = u.global::<Bridge>();
+            b.set_cam_rtmp_state(MixerState::Idle);
+            b.set_cam_rtmp_error_text("".into());
+        });
+    }
+
     ui.global::<Bridge>().on_start_camera_rtmp_stream({
         let ui_weak = ui.as_weak();
         move || {
             let ui = ui_weak.clone();
 
-            let (url, key, cam_idx, res_idx, fps_idx, mirror, stab, zoom) =
+            let (backend, url, key, cam_idx, res_idx, fps_idx, mirror, stab, zoom) =
                 match ui.upgrade() {
                     Some(u) => {
                         let b = u.global::<Bridge>();
                         (
+                            b.get_media_backend(),
                             b.get_cam_rtmp_url().to_string(),
                             b.get_cam_rtmp_stream_key().to_string(),
                             b.get_cam_rtmp_camera_idx(),
@@ -1244,66 +1373,86 @@ fn android_main(app: PlatformApp) {
             let full_url = if key.is_empty() { url } else { format!("{url}/{key}") };
 
             let ui_clone = ui.clone();
-            tokio::spawn(async move {
-                // ── Build the GStreamer graph first. It runs idle until frames arrive. ──
-                let commands = vec![
-                    Command::CreateCameraSource {
-                        id: "cam-rtmp-src".into(),
-                        camera_idx: cam_idx as u32,
-                        width,
-                        height,
-                        fps,
-                        mirror,
-                        stabilization: stab,
-                        zoom,
-                    },
-                    Command::CreateDestination {
-                        id: "cam-rtmp-dest".into(),
-                        family: DestinationFamily::Rtmp { uri: full_url },
-                        audio: false,
-                        video: true,
-                    },
-                    Command::Connect {
-                        link_id: "cam-rtmp-link".into(),
-                        src_id: "cam-rtmp-src".into(),
-                        sink_id: "cam-rtmp-dest".into(),
-                        audio: false,
-                        video: true,
-                        config: None,
-                    },
-                    Command::Start {
-                        id: "cam-rtmp-dest".into(),
-                        cue_time: None,
-                        end_time: None,
-                    },
-                    Command::Start {
-                        id: "cam-rtmp-src".into(),
-                        cue_time: None,
-                        end_time: None,
-                    },
-                ];
-                for cmd in commands {
-                    if let CommandResult::Error(err) =
-                        migration_runtime::runtime::handle_command(cmd)
-                    {
-                        return fail(&ui_clone, err);
-                    }
-                }
+            match backend {
+                MediaBackendKind::Migration => {
+                    tokio::spawn(async move {
+                        // ── Build the GStreamer graph first. It runs idle until frames arrive. ──
+                        let commands = vec![
+                            Command::CreateCameraSource {
+                                id: "cam-rtmp-src".into(),
+                                camera_idx: cam_idx as u32,
+                                width,
+                                height,
+                                fps,
+                                mirror,
+                                stabilization: stab,
+                                zoom,
+                            },
+                            Command::CreateDestination {
+                                id: "cam-rtmp-dest".into(),
+                                family: DestinationFamily::Rtmp { uri: full_url },
+                                audio: false,
+                                video: true,
+                            },
+                            Command::Connect {
+                                link_id: "cam-rtmp-link".into(),
+                                src_id: "cam-rtmp-src".into(),
+                                sink_id: "cam-rtmp-dest".into(),
+                                audio: false,
+                                video: true,
+                                config: None,
+                            },
+                            Command::Start {
+                                id: "cam-rtmp-dest".into(),
+                                cue_time: None,
+                                end_time: None,
+                            },
+                            Command::Start {
+                                id: "cam-rtmp-src".into(),
+                                cue_time: None,
+                                end_time: None,
+                            },
+                        ];
+                        for cmd in commands {
+                            if let CommandResult::Error(err) =
+                                migration_runtime::runtime::handle_command(cmd)
+                            {
+                                return fail(&ui_clone, err);
+                            }
+                        }
 
-                // ── Ask Kotlin to open the camera. ──
-                if let Err(e) = upcall_start_camera_capture(
-                    cam_idx as u32,
-                    width,
-                    height,
-                    fps,
-                    mirror,
-                    stab,
-                    zoom,
-                ) {
-                    tear_down_migration();
-                    return fail(&ui_clone, format!("startCameraCapture: {e}"));
+                        // ── Ask Kotlin to open the camera. ──
+                        if let Err(e) = upcall_start_camera_capture(
+                            cam_idx as u32,
+                            width,
+                            height,
+                            fps,
+                            mirror,
+                            stab,
+                            zoom,
+                        ) {
+                            tear_down_migration();
+                            return fail(&ui_clone, format!("startCameraCapture: {e}"));
+                        }
+                    });
                 }
-            });
+                MediaBackendKind::GstPop => {
+                    tokio::spawn(async move {
+                        start_camera_rtmp_via_gstpop(
+                            ui_clone,
+                            cam_idx as u32,
+                            width,
+                            height,
+                            fps,
+                            full_url,
+                            mirror,
+                            stab,
+                            zoom,
+                        )
+                        .await;
+                    });
+                }
+            }
         }
     });
 
@@ -1311,18 +1460,31 @@ fn android_main(app: PlatformApp) {
         let ui_weak = ui.as_weak();
         move || {
             let ui = ui_weak.clone();
+            let backend = match ui.upgrade() {
+                Some(u) => u.global::<Bridge>().get_media_backend(),
+                None => return,
+            };
             let _ = ui.upgrade_in_event_loop(|u| {
                 u.global::<Bridge>().set_cam_rtmp_state(MixerState::Stopping);
             });
-            tokio::spawn(async move {
-                let _ = upcall_stop_camera_capture();
-                tear_down_migration();
-                let _ = ui.upgrade_in_event_loop(|u| {
-                    let b = u.global::<Bridge>();
-                    b.set_cam_rtmp_state(MixerState::Idle);
-                    b.set_cam_rtmp_error_text("".into());
-                });
-            });
+            match backend {
+                MediaBackendKind::Migration => {
+                    tokio::spawn(async move {
+                        let _ = upcall_stop_camera_capture();
+                        tear_down_migration();
+                        let _ = ui.upgrade_in_event_loop(|u| {
+                            let b = u.global::<Bridge>();
+                            b.set_cam_rtmp_state(MixerState::Idle);
+                            b.set_cam_rtmp_error_text("".into());
+                        });
+                    });
+                }
+                MediaBackendKind::GstPop => {
+                    tokio::spawn(async move {
+                        stop_camera_rtmp_via_gstpop(ui).await;
+                    });
+                }
+            }
         }
     });
 
@@ -1342,7 +1504,34 @@ fn android_main(app: PlatformApp) {
                 }
                 crate::jni_bridge::main_activity::CameraEvent::Failed { reason } => {
                     tracing::warn!("camera capture failed: {reason}");
-                    tear_down_migration();
+                    
+                    let backend = cam_event_ui_weak.upgrade()
+                        .map(|u| u.global::<Bridge>().get_media_backend());
+                    
+                    match backend {
+                        Some(MediaBackendKind::Migration) => {
+                            tear_down_migration();
+                        }
+                        Some(MediaBackendKind::GstPop) => {
+                            if let Some(flag) = GSTPOP_STREAM_ACTIVE.lock().take() {
+                                flag.store(false, Ordering::SeqCst);
+                            }
+                            crate::FRAME_PAIR.cond.notify_all();
+                            let pid = CAM_RTMP_GSTPOP_PID.lock().take();
+                            if let Some(pid) = pid {
+                                tokio::spawn(async move {
+                                    let ws_url = "ws://127.0.0.1:9000/";
+                                    use gstpop_runtime::GstPopClient;
+                                    if let Ok(client) = GstPopClient::connect(ws_url, None).await {
+                                        let _ = client.call("stop", serde_json::json!({ "pipeline_id": pid })).await;
+                                        let _ = client.call("remove_pipeline", serde_json::json!({ "pipeline_id": pid })).await;
+                                    }
+                                });
+                            }
+                        }
+                        None => {}
+                    }
+                    
                     let _ = cam_event_ui_weak.upgrade_in_event_loop(move |u| {
                         let b = u.global::<Bridge>();
                         b.set_cam_rtmp_error_text(reason.into());

@@ -5,6 +5,15 @@ use gst_app::AppSrc;
 use std::sync::{Arc, Mutex};
 use tracing::{error, info, warn};
 
+pub fn pick_rtmp_sink() -> &'static str {
+    if gst::ElementFactory::find("rtmp2sink").is_some() {
+        "rtmp2sink"
+    } else {
+        warn!("rtmp2sink unavailable, using deprecated rtmpsink");
+        "rtmpsink"
+    }
+}
+
 const WHEP_MEGA_BIT: u32 = 1024 * 1024;
 const WHEP_MIN_BITRATE: u32 = WHEP_MEGA_BIT / 2;
 const WHEP_START_BITRATE: u32 = WHEP_MEGA_BIT * 16;
@@ -507,12 +516,7 @@ impl DestinationNode {
                 let mux = Self::make_element("flvmux", None)?;
                 let mux_queue = Self::make_element("queue", None)?;
 
-                let sink_factory = if gst::ElementFactory::find("rtmp2sink").is_some() {
-                    "rtmp2sink"
-                } else {
-                    warn!("rtmp2sink unavailable, using deprecated rtmpsink");
-                    "rtmpsink"
-                };
+                let sink_factory = pick_rtmp_sink();
                 let sink = Self::make_element(sink_factory, None)?;
 
                 pipeline.add(&mux).map_err(|err| {

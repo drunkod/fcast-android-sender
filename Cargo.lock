@@ -2474,6 +2474,7 @@ version = "0.4.3"
 dependencies = [
  "futures-util",
  "gstreamer 0.25.2",
+ "gstreamer-app",
  "gstreamer-pbutils",
  "serde",
  "serde_json",

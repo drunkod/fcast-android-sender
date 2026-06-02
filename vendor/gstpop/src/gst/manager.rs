@@ -330,6 +330,31 @@ impl PipelineManager {
         Ok(())
     }
 
+    pub async fn push_buffer(&self, id: &str, elem_name: &str, data: Vec<u8>, pts_ns: u64) -> Result<()> {
+        use gstreamer::prelude::*;
+
+        let pipeline = self.get_pipeline(id).await?;
+        let p = pipeline.lock().await;
+        let gst_pipeline = p.pipeline_object();
+        let element = gst_pipeline.by_name(elem_name)
+            .ok_or_else(|| GstpopError::InvalidPipeline(format!("Element '{}' not found", elem_name)))?;
+        let appsrc = element.dynamic_cast::<gst_app::AppSrc>()
+            .map_err(|_| GstpopError::InvalidPipeline(format!("Element '{}' is not an appsrc", elem_name)))?;
+
+        let mut buf = gstreamer::Buffer::with_size(data.len())
+            .map_err(|_| GstpopError::InvalidPipeline("Failed to create GStreamer buffer".to_string()))?;
+        {
+            let bm = buf.get_mut().ok_or_else(|| GstpopError::InvalidPipeline("Buffer not writable".to_string()))?;
+            bm.set_pts(gstreamer::ClockTime::from_nseconds(pts_ns));
+            let mut mapped = bm.map_writable()
+                .map_err(|e| GstpopError::InvalidPipeline(format!("Failed to map buffer: {:?}", e)))?;
+            mapped.copy_from_slice(&data);
+        }
+        appsrc.push_buffer(buf)
+            .map_err(|e| GstpopError::InvalidPipeline(format!("Failed to push buffer: {:?}", e)))?;
+        Ok(())
+    }
+
     pub async fn shutdown(&self) {
         let pipelines_to_stop: Vec<_> = {
             let mut pipelines = self.pipelines.write().await;

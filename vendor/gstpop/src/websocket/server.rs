@@ -31,8 +31,8 @@ use super::pipeline::SnapshotParams;
 use super::protocol::Request;
 use super::{CLIENT_MESSAGE_BUFFER, MAX_CONCURRENT_CLIENTS};
 
-/// Maximum WebSocket message/frame size (128 KB) to prevent memory exhaustion
-const MAX_WS_MESSAGE_SIZE: usize = 128 * 1024;
+/// Maximum WebSocket message/frame size (8 MB) to accommodate raw video frames
+const MAX_WS_MESSAGE_SIZE: usize = 8 * 1024 * 1024;
 
 fn ws_config() -> WebSocketConfig {
     let mut config = WebSocketConfig::default();
@@ -205,7 +205,7 @@ async fn handle_connection(
         clients_map.insert(addr, tx);
     }
 
-    let handler = ManagerInterface::new(manager);
+    let handler = ManagerInterface::new(manager.clone());
 
     // Spawn task to forward messages from channel to WebSocket
     let sender_task = tokio::spawn(async move {
@@ -283,6 +283,46 @@ async fn handle_connection(
                 let clients_map = clients.read().await;
                 if let Some(tx) = clients_map.get(&addr) {
                     let _ = tx.try_send(Message::Pong(data));
+                }
+            }
+            Ok(Message::Binary(bin)) => {
+                if bin.len() >= 16 {
+                    let mut offset = 0;
+                    if let Ok(pid_len_bytes) = bin[offset..offset+4].try_into() {
+                        let pid_len = u32::from_be_bytes(pid_len_bytes) as usize;
+                        offset += 4;
+                        if offset + pid_len <= bin.len() {
+                            if let Ok(pipeline_id) = std::str::from_utf8(&bin[offset..offset+pid_len]) {
+                                let pipeline_id = pipeline_id.to_string();
+                                offset += pid_len;
+                                if offset + 4 <= bin.len() {
+                                    if let Ok(elem_len_bytes) = bin[offset..offset+4].try_into() {
+                                        let elem_len = u32::from_be_bytes(elem_len_bytes) as usize;
+                                        offset += 4;
+                                        if offset + elem_len <= bin.len() {
+                                            if let Ok(elem_name) = std::str::from_utf8(&bin[offset..offset+elem_len]) {
+                                                let elem_name = elem_name.to_string();
+                                                offset += elem_len;
+                                                if offset + 8 <= bin.len() {
+                                                    if let Ok(pts_bytes) = bin[offset..offset+8].try_into() {
+                                                        let pts_ns = u64::from_be_bytes(pts_bytes);
+                                                        offset += 8;
+                                                        let raw_data = bin[offset..].to_vec();
+                                                        let manager_clone = Arc::clone(&manager);
+                                                        tokio::spawn(async move {
+                                                            if let Err(e) = manager_clone.push_buffer(&pipeline_id, &elem_name, raw_data, pts_ns).await {
+                                                                error!("Failed to push buffer from ws binary frame: {}", e);
+                                                            }
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
             Ok(_) => {}
