@@ -506,7 +506,14 @@ impl DestinationNode {
             DestinationFamily::Rtmp { uri } => {
                 let mux = Self::make_element("flvmux", None)?;
                 let mux_queue = Self::make_element("queue", None)?;
-                let sink = Self::make_element("rtmp2sink", None)?;
+
+                let sink_factory = if gst::ElementFactory::find("rtmp2sink").is_some() {
+                    "rtmp2sink"
+                } else {
+                    warn!("rtmp2sink unavailable, using deprecated rtmpsink");
+                    "rtmpsink"
+                };
+                let sink = Self::make_element(sink_factory, None)?;
 
                 pipeline.add(&mux).map_err(|err| {
                     format!("Failed to add flvmux to destination pipeline: {err:?}")
@@ -515,7 +522,7 @@ impl DestinationNode {
                     format!("Failed to add mux queue to destination pipeline: {err:?}")
                 })?;
                 pipeline.add(&sink).map_err(|err| {
-                    format!("Failed to add rtmp2sink to destination pipeline: {err:?}")
+                    format!("Failed to add {sink_factory} to destination pipeline: {err:?}")
                 })?;
 
                 sink.set_property("location", uri.clone());
@@ -533,8 +540,8 @@ impl DestinationNode {
 
                 if let Some(appsrc) = video_appsrc.as_ref() {
                     let vconv = Self::make_element("videoconvert", None)?;
-                    let timecodestamper = Self::make_element("timecodestamper", None)?;
-                    let timeoverlay = Self::make_element("timeoverlay", None)?;
+                    let timecodestamper = gst::ElementFactory::make("timecodestamper").build().ok();
+                    let timeoverlay = gst::ElementFactory::make("timeoverlay").build().ok();
                     let venc_chain = Self::select_video_encoder(&self.id)?;
                     let vparse = Self::make_element("h264parse", None)?;
                     let venc_queue = Self::make_element("queue", None)?;
@@ -542,12 +549,16 @@ impl DestinationNode {
                     pipeline.add(&vconv).map_err(|err| {
                         format!("Failed to add videoconvert to rtmp pipeline: {err:?}")
                     })?;
-                    pipeline.add(&timecodestamper).map_err(|err| {
-                        format!("Failed to add timecodestamper to rtmp pipeline: {err:?}")
-                    })?;
-                    pipeline.add(&timeoverlay).map_err(|err| {
-                        format!("Failed to add timeoverlay to rtmp pipeline: {err:?}")
-                    })?;
+                    if let Some(ref e) = timecodestamper {
+                        pipeline.add(e).map_err(|err| {
+                            format!("Failed to add timecodestamper to rtmp pipeline: {err:?}")
+                        })?;
+                    }
+                    if let Some(ref e) = timeoverlay {
+                        pipeline.add(e).map_err(|err| {
+                            format!("Failed to add timeoverlay to rtmp pipeline: {err:?}")
+                        })?;
+                    }
                     Self::add_video_encoder_chain(&pipeline, &venc_chain, "rtmp pipeline")?;
                     pipeline.add(&vparse).map_err(|err| {
                         format!("Failed to add h264parse to rtmp pipeline: {err:?}")
@@ -559,25 +570,35 @@ impl DestinationNode {
                     if vparse.has_property("config-interval") {
                         vparse.set_property("config-interval", -1i32);
                     }
-                    if timecodestamper.has_property("source") {
-                        timecodestamper.set_property_from_str("source", "rtc");
+                    if let Some(ref e) = timecodestamper {
+                        if e.has_property("source") {
+                            e.set_property_from_str("source", "rtc");
+                        }
                     }
-                    if timeoverlay.has_property("time-mode") {
-                        timeoverlay.set_property_from_str("time-mode", "time-code");
+                    if let Some(ref e) = timeoverlay {
+                        if e.has_property("time-mode") {
+                            e.set_property_from_str("time-mode", "time-code");
+                        }
+                    }
+
+                    let mut pre_chain: Vec<gst::Element> = vec![vconv];
+                    if let Some(ref e) = timecodestamper {
+                        pre_chain.push(e.clone());
+                    }
+                    if let Some(ref e) = timeoverlay {
+                        pre_chain.push(e.clone());
                     }
 
                     gst::Element::link_many(
-                        [
-                            appsrc.upcast_ref::<gst::Element>(),
-                            &vconv,
-                            &timecodestamper,
-                            &timeoverlay,
-                        ]
-                        .as_slice(),
+                        std::iter::once(appsrc.upcast_ref::<gst::Element>())
+                            .chain(pre_chain.iter().map(|e| e.upcast_ref::<gst::Element>()))
+                            .collect::<Vec<_>>()
+                            .as_slice()
                     )
                     .map_err(|err| format!("Failed to link rtmp video preprocessing: {err:?}"))?;
+
                     Self::link_video_encoder_chain(
-                        &timeoverlay,
+                        pre_chain.last().unwrap(),
                         &venc_chain,
                         &vparse,
                         "rtmp video encoder chain",
