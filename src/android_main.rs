@@ -1185,20 +1185,124 @@ fn android_main(app: PlatformApp) {
         log::info!("pick-test-overlay-image: stub — file picker not yet implemented");
     });
 
+    use migration_runtime::protocol::{Command, CommandResult, DestinationFamily};
+    use crate::jni_bridge::camera::{upcall_start_camera_capture, upcall_stop_camera_capture};
+
+    fn tear_down_migration() {
+        for id in ["cam-rtmp-src", "cam-rtmp-dest"] {
+            let _ = migration_runtime::runtime::handle_command(Command::Remove { id: id.into() });
+        }
+    }
+
+    fn fail(ui: &slint::Weak<MainWindow>, msg: impl Into<String>) {
+        let msg: slint::SharedString = msg.into().into();
+        let _ = ui.upgrade_in_event_loop(move |u| {
+            let b = u.global::<Bridge>();
+            b.set_cam_rtmp_error_text(msg);
+            b.set_cam_rtmp_state(MixerState::Error);
+        });
+    }
+
     ui.global::<Bridge>().on_start_camera_rtmp_stream({
         let ui_weak = ui.as_weak();
         move || {
             let ui = ui_weak.clone();
-            let _ = ui.upgrade_in_event_loop(|ui| {
-                ui.global::<Bridge>().set_cam_rtmp_state(MixerState::Starting);
+
+            let (url, key, cam_idx, res_idx, fps_idx, mirror, stab, zoom) =
+                match ui.upgrade() {
+                    Some(u) => {
+                        let b = u.global::<Bridge>();
+                        (
+                            b.get_cam_rtmp_url().to_string(),
+                            b.get_cam_rtmp_stream_key().to_string(),
+                            b.get_cam_rtmp_camera_idx(),
+                            b.get_cam_rtmp_resolution_idx(),
+                            b.get_cam_rtmp_framerate_idx(),
+                            b.get_cam_rtmp_mirror(),
+                            b.get_cam_rtmp_stabilization(),
+                            b.get_cam_rtmp_zoom(),
+                        )
+                    }
+                    None => return,
+                };
+
+            let _ = ui.upgrade_in_event_loop(|u| {
+                u.global::<Bridge>().set_cam_rtmp_state(MixerState::Starting);
             });
 
-            // Phase-1 stub: pretend the stream is up after a short delay.
+            let (width, height) = match res_idx {
+                0 => (854, 480),
+                1 => (1280, 720),
+                3 => (3840, 2160),
+                _ => (1920, 1080),
+            };
+            let fps = match fps_idx {
+                0 => 24,
+                2 => 60,
+                _ => 30,
+            };
+            let full_url = if key.is_empty() { url } else { format!("{url}/{key}") };
+
+            let ui_clone = ui.clone();
             tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-                let _ = ui.upgrade_in_event_loop(|ui| {
-                    ui.global::<Bridge>().set_cam_rtmp_state(MixerState::Running);
-                });
+                // ── Build the GStreamer graph first. It runs idle until frames arrive. ──
+                let commands = vec![
+                    Command::CreateCameraSource {
+                        id: "cam-rtmp-src".into(),
+                        camera_idx: cam_idx as u32,
+                        width,
+                        height,
+                        fps,
+                        mirror,
+                        stabilization: stab,
+                        zoom,
+                    },
+                    Command::CreateDestination {
+                        id: "cam-rtmp-dest".into(),
+                        family: DestinationFamily::Rtmp { uri: full_url },
+                        audio: false,
+                        video: true,
+                    },
+                    Command::Connect {
+                        link_id: "cam-rtmp-link".into(),
+                        src_id: "cam-rtmp-src".into(),
+                        sink_id: "cam-rtmp-dest".into(),
+                        audio: false,
+                        video: true,
+                        config: None,
+                    },
+                    Command::Start {
+                        id: "cam-rtmp-dest".into(),
+                        cue_time: None,
+                        end_time: None,
+                    },
+                    Command::Start {
+                        id: "cam-rtmp-src".into(),
+                        cue_time: None,
+                        end_time: None,
+                    },
+                ];
+                for cmd in commands {
+                    if let CommandResult::Error(err) =
+                        migration_runtime::runtime::handle_command(cmd)
+                    {
+                        return fail(&ui_clone, err);
+                    }
+                }
+
+                // ── Ask Kotlin to open the camera. ──
+                if let Err(e) = upcall_start_camera_capture(
+                    cam_idx as u32,
+                    width,
+                    height,
+                    fps,
+                    mirror,
+                    stab,
+                    zoom,
+                ) {
+                    tear_down_migration();
+                    return fail(&ui_clone, format!("startCameraCapture: {e}"));
+                }
             });
         }
     });
@@ -1207,17 +1311,46 @@ fn android_main(app: PlatformApp) {
         let ui_weak = ui.as_weak();
         move || {
             let ui = ui_weak.clone();
-            let _ = ui.upgrade_in_event_loop(|ui| {
-                ui.global::<Bridge>().set_cam_rtmp_state(MixerState::Stopping);
+            let _ = ui.upgrade_in_event_loop(|u| {
+                u.global::<Bridge>().set_cam_rtmp_state(MixerState::Stopping);
             });
             tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                let _ = ui.upgrade_in_event_loop(|ui| {
-                    let b = ui.global::<Bridge>();
+                let _ = upcall_stop_camera_capture();
+                tear_down_migration();
+                let _ = ui.upgrade_in_event_loop(|u| {
+                    let b = u.global::<Bridge>();
                     b.set_cam_rtmp_state(MixerState::Idle);
                     b.set_cam_rtmp_error_text("".into());
                 });
             });
+        }
+    });
+
+    // ── Listen to camera lifecycle events from Kotlin via JNI ──
+    let cam_event_ui_weak = ui.as_weak();
+    std::thread::spawn(move || loop {
+        match crate::GLOB_CAMERA_EVENT_CHAN.1.recv() {
+            Ok(event) => match event {
+                crate::jni_bridge::main_activity::CameraEvent::Started { width, height } => {
+                    tracing::info!("camera capture started {width}x{height}");
+                    let _ = cam_event_ui_weak.upgrade_in_event_loop(|u| {
+                        u.global::<Bridge>().set_cam_rtmp_state(MixerState::Running);
+                    });
+                }
+                crate::jni_bridge::main_activity::CameraEvent::Stopped => {
+                    tracing::info!("camera capture stopped");
+                }
+                crate::jni_bridge::main_activity::CameraEvent::Failed { reason } => {
+                    tracing::warn!("camera capture failed: {reason}");
+                    tear_down_migration();
+                    let _ = cam_event_ui_weak.upgrade_in_event_loop(move |u| {
+                        let b = u.global::<Bridge>();
+                        b.set_cam_rtmp_error_text(reason.into());
+                        b.set_cam_rtmp_state(MixerState::Error);
+                    });
+                }
+            },
+            Err(_) => break,
         }
     });
 
