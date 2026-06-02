@@ -421,9 +421,11 @@ export global Bridge {
     in-out property <string> cam-rtmp-stream-key:      "";
     in property      <MixerState> cam-rtmp-state:      MixerState.idle;
     in property      <string>     cam-rtmp-error-text: "";
+    in property      <bool>       cam-rtmp-camera-permission: false;
 
     callback start-camera-rtmp-stream();
     callback stop-camera-rtmp-stream();
+    callback request-cam-rtmp-camera-permission();
     pure callback url-looks-valid(string) -> bool;
 
     // ── Test functionality (test-functionality panel) ────────────────────

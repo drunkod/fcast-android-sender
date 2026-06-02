@@ -481,6 +481,9 @@ fn android_main(app: PlatformApp) {
     b.set_cam_rtmp_mirror(cfg.mirror);
     b.set_cam_rtmp_stabilization(cfg.stabilization);
     b.set_cam_rtmp_zoom(cfg.zoom.max(0.5));
+    b.set_cam_rtmp_camera_permission(
+        crate::jni_bridge::camera::upcall_probe_camera_permission().unwrap_or(false)
+    );
 
     if let Ok(Some(key)) = crate::secret::load("cam_rtmp_stream_key") {
         b.set_cam_rtmp_stream_key(key.into());
@@ -1402,6 +1405,15 @@ fn android_main(app: PlatformApp) {
         url.starts_with("rtmp://") || url.starts_with("rtmps://")
     });
 
+    let req_perm_ui_weak = ui.as_weak();
+    ui.global::<Bridge>().on_request_cam_rtmp_camera_permission(move || {
+        let _ = crate::jni_bridge::camera::upcall_request_camera_permission();
+        let granted = crate::jni_bridge::camera::upcall_probe_camera_permission().unwrap_or(false);
+        let _ = req_perm_ui_weak.upgrade_in_event_loop(move |u| {
+            u.global::<Bridge>().set_cam_rtmp_camera_permission(granted);
+        });
+    });
+
     ui.global::<Bridge>().on_start_camera_rtmp_stream({
         let ui_weak = ui.as_weak();
         move || {
@@ -1612,7 +1624,14 @@ fn android_main(app: PlatformApp) {
                         None => {}
                     }
                     
-                    fail(&cam_event_ui_weak, reason);
+                    fail(&cam_event_ui_weak, reason.clone());
+
+                    if reason == "Camera permission denied" {
+                        let granted = crate::jni_bridge::camera::upcall_probe_camera_permission().unwrap_or(false);
+                        let _ = cam_event_ui_weak.upgrade_in_event_loop(move |u| {
+                            u.global::<Bridge>().set_cam_rtmp_camera_permission(granted);
+                        });
+                    }
                 }
             },
             Err(_) => break,

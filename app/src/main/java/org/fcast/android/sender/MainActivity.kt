@@ -272,6 +272,12 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         cameraCoordinator.stopCapture()
     }
 
+    // Called from Rust via JNI
+    @Suppress("unused")
+    private fun probeCameraPermission(): Boolean =
+        checkSelfPermission(android.Manifest.permission.CAMERA) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+
     // ── JNI symbol shims ─────────────────────────────────────────────────
     // Names match Rust's Java_org_fcast_android_sender_MainActivity_native*.
     external fun nativeBackPressed()

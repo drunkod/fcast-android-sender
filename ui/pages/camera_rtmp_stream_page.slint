@@ -149,7 +149,7 @@ export component CameraRtmpStreamPage inherits Rectangle {
 
                     SettingsSection {
                         title: @tr("CAMERA PREVIEW");
-                        CapturePreview {
+                        if Bridge.cam-rtmp-camera-permission: CapturePreview {
                             mock-source-label: @tr("Camera")
                                 + " ("
                                 + ["480p","720p","1080p","4K"][Math.clamp(Bridge.cam-rtmp-resolution-idx, 0, 3)]
@@ -158,6 +158,26 @@ export component CameraRtmpStreamPage inherits Rectangle {
                                 + ")";
                             mock-active: Bridge.cam-rtmp-state == MixerState.running
                                       || Bridge.cam-rtmp-state == MixerState.starting;
+                        }
+                        if !Bridge.cam-rtmp-camera-permission: Rectangle {
+                            background: Theme.surface-card;
+                            border-radius: Theme.radius-card;
+                            min-height: 180px;
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: Theme.spacing-default;
+                                padding: Theme.padding-screen;
+                                Text {
+                                    text: @tr("Camera access is required for preview and streaming.");
+                                    color: Theme.text-secondary;
+                                    horizontal-alignment: center;
+                                    wrap: word-wrap;
+                                }
+                                PrimaryButton {
+                                    label: @tr("Grant camera access");
+                                    clicked => { Bridge.request-cam-rtmp-camera-permission(); }
+                                }
+                            }
                         }
                     }
 
@@ -251,7 +271,8 @@ export component CameraRtmpStreamPage inherits Rectangle {
                         label: @tr("Go Live");
                         enabled: (Bridge.cam-rtmp-state == MixerState.idle
                               || Bridge.cam-rtmp-state == MixerState.error)
-                              && Bridge.url-looks-valid(Bridge.cam-rtmp-url);
+                              && Bridge.url-looks-valid(Bridge.cam-rtmp-url)
+                              && Bridge.cam-rtmp-camera-permission;
                         clicked => { Bridge.start-camera-rtmp-stream(); root.any-edits-pending = false; }
                         horizontal-stretch: 1;
                     }

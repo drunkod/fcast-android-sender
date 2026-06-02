@@ -48,3 +48,44 @@ pub fn upcall_stop_camera_capture() -> Result<(), String> {
 pub fn upcall_stop_camera_capture() -> Result<(), String> {
     Ok(())
 }
+
+#[cfg(target_os = "android")]
+pub fn upcall_probe_camera_permission() -> Result<bool, String> {
+    let ctx = crate::android_context().map_err(|e| e.to_string())?;
+    let mut env = ctx.vm.attach_current_thread().map_err(|e| e.to_string())?;
+    let res = env.call_method(
+        &ctx.activity,
+        "probeCameraPermission",
+        "()Z",
+        &[],
+    ).map_err(|e| e.to_string())?;
+    res.z().map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn upcall_probe_camera_permission() -> Result<bool, String> {
+    Ok(true)
+}
+
+#[cfg(target_os = "android")]
+pub fn upcall_request_camera_permission() -> Result<(), String> {
+    let ctx = crate::android_context().map_err(|e| e.to_string())?;
+    let mut env = ctx.vm.attach_current_thread().map_err(|e| e.to_string())?;
+    let perm_str = env.new_string("android.permission.CAMERA").map_err(|e| e.to_string())?;
+    let perm_array = env.new_object_array(1, "java/lang/String", perm_str).map_err(|e| e.to_string())?;
+    env.call_method(
+        &ctx.activity,
+        "requestPermissions",
+        "([Ljava/lang/String;I)V",
+        &[
+            jni::objects::JValue::Object(&perm_array),
+            jni::objects::JValue::Int(1002), // REQ_CAMERA_PERM = 1002
+        ],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn upcall_request_camera_permission() -> Result<(), String> {
+    Ok(())
+}
