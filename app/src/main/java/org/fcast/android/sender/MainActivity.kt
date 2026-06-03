@@ -4,7 +4,6 @@ import android.app.NativeActivity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.SurfaceTexture
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Bundle
@@ -13,7 +12,8 @@ import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.Surface
-import android.view.TextureView
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.View
 import android.widget.FrameLayout
 import kotlinx.coroutines.MainScope
@@ -42,7 +42,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     private lateinit var controller: SenderController
 
     private val activityScope = MainScope()
-    private var cameraPreviewView: TextureView? = null
+    private var cameraPreviewView: SurfaceView? = null
     private var cameraPreviewSurface: Surface? = null
     private var cameraPreviewConfig: CameraCaptureConfig? = null
     private var cameraPreviewRequested = false
@@ -333,6 +333,9 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
             } else {
                 cameraPreviewView?.visibility = View.INVISIBLE
             }
+            if (controller.uiState.value is UiState.Disconnected) {
+                startDefaultCameraPreview()
+            }
         }
     }
 
@@ -357,38 +360,34 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         )
     }
 
-    private fun ensureCameraPreviewView(): TextureView {
+    private fun ensureCameraPreviewView(): SurfaceView {
         cameraPreviewView?.let { return it }
-        val view = TextureView(this).apply {
-            isOpaque = true
-            surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
-                    cameraPreviewSurface?.release()
-                    cameraPreviewSurface = Surface(surfaceTexture)
-                    maybeStartCameraPreview()
-                }
-
-                override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
-
-                override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                    if (!cameraCoordinator.isCapturing) {
-                        cameraCoordinator.stopPreview()
-                    }
-                    cameraPreviewSurface?.release()
-                    cameraPreviewSurface = null
-                    return true
-                }
-
-                override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
+        val view = SurfaceView(this)
+        // Default z-order: SurfaceView surface sits BELOW the window surface.
+        // Combined with PixelFormat.TRANSLUCENT on the window, transparent
+        // Slint pixels let the camera show through underneath.
+        view.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                cameraPreviewSurface?.release()
+                cameraPreviewSurface = holder.surface
+                maybeStartCameraPreview()
             }
-        }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                if (!cameraCoordinator.isCapturing) {
+                    cameraCoordinator.stopPreview()
+                }
+                cameraPreviewSurface = null
+            }
+        })
         val params = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT,
             Gravity.CENTER
         )
-        val decorView = window.decorView as android.view.ViewGroup
-        decorView.addView(view, 0, params)
+        addContentView(view, params)
         view.visibility = View.VISIBLE
         cameraPreviewView = view
         return view
@@ -396,7 +395,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
 
     private fun startDefaultCameraPreview() {
         if (cameraPreviewRequested) return
-        startCameraPreview(1, 1920, 1080, 30, false, false, 1.0f) // 1 = Front camera usually, or 0 = Back
+        startCameraPreview(0, 1920, 1080, 30, false, false, 1.0f) // 0 = back camera
     }
 
     private fun maybeStartCameraPreview() {

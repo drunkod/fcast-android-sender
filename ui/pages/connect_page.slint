@@ -3,7 +3,7 @@
 //
 // SDK import path depth: ui/pages/ is 4 levels above the project root,
 // so the SDK common.slint path gains one extra `../` vs. main.slint.
-import { VerticalBox, Spinner, LineEdit } from "std-widgets.slint";
+import { VerticalBox, Spinner, LineEdit, ScrollView } from "std-widgets.slint";
 import { Bridge, Panel } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
@@ -11,7 +11,11 @@ import { PrimaryButton } from "../components/buttons.slint";
 import { ReceiverContextMenu } from "../components/receiver_context_menu.slint";
 import { ConfirmDialog }       from "../components/confirm_dialog.slint";
 import { LongPressTouchArea } from "../components/long_press_touch_area.slint";
+
 export component ConnectView inherits Rectangle {
+    // State to toggle the modal device list overlay
+    in-out property <bool> show-device-list: false;
+
     // Context menu state.
     in-out property <bool>   show-context-menu: false;
     in-out property <string> context-receiver-id;
@@ -19,112 +23,229 @@ export component ConnectView inherits Rectangle {
     in-out property <length> context-menu-y: 0px;
     // Forget confirmation state.
     in-out property <bool> show-forget-confirm: false;
-    VerticalBox {
-        alignment: start;
-        Text {
-            horizontal-alignment: center;
-            font-size: Theme.font-size-body;
-            font-weight: 600;
-            text: @tr("Connect to your receiver");
-        }
-        // ── Empty state: searching ────────────────────────────────────────
-        if Bridge.devices.length == 0: Rectangle {
-            height: 90px;
-            border-radius: Theme.radius-card;
-            background: Theme.surface-card;
+
+    background: transparent;
+
+    // 1. Clean startup camera view (default state)
+    if !root.show-device-list : Rectangle {
+        background: transparent;
+
+        // Floating glassmorphic "Connect to Receiver" / Cast Button
+        Rectangle {
+            y: parent.height - 120px;
+            width: 240px;
+            height: 56px;
+            border-radius: Theme.radius-circle;
+            background: ta-connect.pressed ? Theme.accent-pressed.with-alpha(0.85) : Theme.accent.with-alpha(0.7);
+            border-width: 1.5px;
+            border-color: Theme.accent-muted.with-alpha(0.4);
+            drop-shadow-blur: Theme.elevation-2-blur;
+            drop-shadow-color: Theme.scrim-strong;
+
+            ta-connect := TouchArea {
+                clicked => { root.show-device-list = true; }
+            }
+
             HorizontalLayout {
                 alignment: center;
                 spacing: Theme.spacing-default;
-                Spinner {
-                    indeterminate: true;
-                    width: 24px;
-                    height: 24px;
+                Text {
+                    text: "⎋"; // Cast icon
+                    font-size: Theme.font-size-heading;
+                    color: Theme.text-on-accent;
+                    vertical-alignment: center;
                 }
                 Text {
-                    text: @tr("Searching for receivers…");
-                    color: Theme.text-secondary;
+                    text: @tr("Connect to Receiver");
+                    font-size: Theme.font-size-body;
+                    font-weight: 600;
+                    color: Theme.text-on-accent;
                     vertical-alignment: center;
                 }
             }
         }
-        // ── Populated state: device list ──────────────────────────────────
-        if Bridge.devices.length > 0: VerticalLayout {
-            spacing: Theme.spacing-default;
-            for device[idx] in Bridge.devices: Rectangle {
-                height: Theme.row-height + 18px;
-                ta := LongPressTouchArea {
-                    long-pressed => {
-                        root.context-receiver-id   = device.id;
-                        root.context-receiver-name = device.name;
-                        root.context-menu-y        = (parent.height * idx) + 100px;
-                        root.show-context-menu     = true;
+    }
+
+    // 2. Glassmorphic Modal Bottom Sheet showing the receiver list/controls
+    if root.show-device-list : Rectangle {
+        background: Theme.scrim-strong;
+
+        // Tapping background scrim closes the modal sheet
+        TouchArea {
+            clicked => { root.show-device-list = false; }
+        }
+
+        // Bottom sheet card
+        Rectangle {
+            width: parent.width - 24px;
+            height: parent.height * 0.85;
+            x: 12px;
+            y: parent.height - self.height - 12px;
+            background: Theme.surface-card.with-alpha(0.95);
+            border-radius: Theme.radius-card * 2;
+            border-width: 1px;
+            border-color: Theme.text-disabled.with-alpha(0.25);
+            drop-shadow-blur: Theme.elevation-3-blur;
+            drop-shadow-color: Theme.scrim-strong;
+
+            // Touch blocker to prevent click propagation to scrim
+            TouchArea {}
+
+            VerticalLayout {
+                padding: Theme.padding-screen * 1.5;
+                spacing: Theme.spacing-loose;
+
+                // Bottom sheet header with title and close button
+                HorizontalLayout {
+                    alignment: space-between;
+                    Text {
+                        text: @tr("Connect to Receiver");
+                        font-size: Theme.font-size-heading;
+                        font-weight: 700;
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
                     }
-                    clicked => {
-                        Bridge.connect-receiver(device.id);
-                    }
+
+                    // Close Button
                     Rectangle {
-                        width: parent.width - 10px;
-                        height: parent.height - 8px;
-                        background: ta.pressed ? Theme.accent-pressed : Theme.surface-card;
-                        border-radius: Theme.radius-card;
-                        VerticalLayout {
-                            padding-left: Theme.padding-screen;
-                            padding-right: Theme.padding-screen;
-                            alignment: center;
-                            spacing: 2px;
-                            Text {
-                                text: device.name;
-                                color: Theme.text-primary;
-                                font-size: Theme.font-size-body;
-                                overflow: elide;
+                        width: 32px;
+                        height: 32px;
+                        border-radius: Theme.radius-circle;
+                        background: close-ta.pressed ? Theme.surface-overlay.brighter(15%) : Theme.surface-overlay;
+
+                        close-ta := TouchArea {
+                            clicked => { root.show-device-list = false; }
+                        }
+
+                        Text {
+                            text: "✕";
+                            font-size: Theme.font-size-body;
+                            color: Theme.text-secondary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Divider line
+                Rectangle {
+                    height: 1px;
+                    background: Theme.text-disabled.with-alpha(0.15);
+                }
+
+                // Scrollable container for the device list & manual IP inputs
+                ScrollView {
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        spacing: Theme.spacing-loose;
+                        alignment: start;
+
+                        // ── Empty state: searching ────────────────────────────────────────
+                        if Bridge.devices.length == 0: Rectangle {
+                            height: 90px;
+                            border-radius: Theme.radius-card;
+                            background: Theme.surface-overlay;
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: Theme.spacing-default;
+                                Spinner {
+                                    indeterminate: true;
+                                    width: 24px;
+                                    height: 24px;
+                                }
+                                Text {
+                                    text: @tr("Searching for receivers…");
+                                    color: Theme.text-secondary;
+                                    vertical-alignment: center;
+                                }
                             }
-                            Text {
-                                text: device.address;
-                                color: Theme.text-secondary;
-                                font-size: Theme.font-size-label;
-                                overflow: elide;
+                        }
+
+                        // ── Populated state: device list ──────────────────────────────────
+                        if Bridge.devices.length > 0: VerticalLayout {
+                            spacing: Theme.spacing-default;
+                            for device[idx] in Bridge.devices: Rectangle {
+                                height: Theme.row-height + 18px;
+                                ta := LongPressTouchArea {
+                                    long-pressed => {
+                                        root.context-receiver-id   = device.id;
+                                        root.context-receiver-name = device.name;
+                                        root.context-menu-y        = (parent.height * idx) + 100px;
+                                        root.show-context-menu     = true;
+                                    }
+                                    clicked => {
+                                        Bridge.connect-receiver(device.id);
+                                    }
+                                    Rectangle {
+                                        background: ta.pressed ? Theme.accent-pressed : Theme.surface-overlay;
+                                        border-radius: Theme.radius-card;
+                                        VerticalLayout {
+                                            padding-left: Theme.padding-screen;
+                                            padding-right: Theme.padding-screen;
+                                            alignment: center;
+                                            spacing: 2px;
+                                            Text {
+                                                text: device.name;
+                                                color: Theme.text-primary;
+                                                font-size: Theme.font-size-body;
+                                                overflow: elide;
+                                            }
+                                            Text {
+                                                text: device.address;
+                                                color: Theme.text-secondary;
+                                                font-size: Theme.font-size-label;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Manual IP input connection layout
+                        VerticalLayout {
+                            spacing: Theme.spacing-default;
+                            ip-input := LineEdit {
+                                placeholder-text: @tr("Receiver IP address");
+                                horizontal-stretch: 1;
+                            }
+                            PrimaryButton {
+                                label: @tr("Connect");
+                                enabled: ip-input.text != "";
+                                clicked => {
+                                    // UI-only placeholder
+                                }
+                            }
+                        }
+
+                        // "Pair via QR" button
+                        HorizontalLayout {
+                            alignment: center;
+                            padding: 8px;
+                            Rectangle {
+                                width: 140px;
+                                height: 44px;
+                                border-radius: Theme.radius-card;
+                                background: Theme.surface-overlay;
+                                Text {
+                                    text: @tr("Pair via QR");
+                                    color: Theme.accent;
+                                    font-size: Theme.font-size-body;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                                TouchArea {
+                                    clicked => { PanelBridge.push(Panel.pairing); }
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        VerticalLayout {
-            spacing: Theme.spacing-default;
-            ip-input := LineEdit {
-                placeholder-text: @tr("Receiver IP address");
-                horizontal-stretch: 1;
-            }
-            PrimaryButton {
-                width: parent.width;
-                label: @tr("Connect");
-                enabled: ip-input.text != "";
-                // UI-only — no real connect handler in this phase.
-                clicked => { /* placeholder */ }
-            }
-        }
-        // "Pair via QR" button — between the receiver list and the bottom.
-        HorizontalLayout {
-            alignment: center;
-            padding: 8px;
-            Rectangle {
-                width: 140px;
-                height: 44px;
-                border-radius: Theme.radius-card;
-                background: Theme.surface-card;
-                Text {
-                    text: @tr("Pair via QR");
-                    color: Theme.accent;
-                    font-size: Theme.font-size-body;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-                TouchArea {
-                    clicked => { PanelBridge.push(Panel.pairing); }
-                }
-            }
-        }
     }
+
     // Overlay layer: context menu scrim + menu.
     if root.show-context-menu: Rectangle {
         width: 100%;
