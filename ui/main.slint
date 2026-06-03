@@ -93,6 +93,10 @@ import { Theme } from "theme.slint";
 import { CastControlBar } from "components/control_bar.slint";
 import { InfoBanner } from "components/info_banner.slint";
 import { PanelHost } from "components/panel_host.slint";
+import { LockOverlay } from "components/lock_overlay.slint";
+import { StealthOverlay } from "components/stealth_overlay.slint";
+import { SnapshotCountdown } from "components/snapshot_countdown.slint";
+import { LifecycleMode } from "bridge.slint";
 
 // ── Root window ───────────────────────────────────────────────────────────────
 export component MainWindow inherits Window {
@@ -189,5 +193,10 @@ export component MainWindow inherits Window {
             y: SafeArea.top;
             width: parent.width;
         }
+
+        // ── Lifecycle overlay layer ───────────────────────────────────────────────
+        if Bridge.lifecycle == LifecycleMode.lock-screen:        LockOverlay { }
+        if Bridge.lifecycle == LifecycleMode.stealth:            StealthOverlay { }
+        if Bridge.lifecycle == LifecycleMode.snapshot-countdown: SnapshotCountdown { }
     }
 }
