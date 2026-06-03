@@ -52,7 +52,10 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
             // NativeActivity does not inherit from ComponentActivity, so we use
             // the legacy requestPermissions + onRequestPermissionsResult path
             // (same approach the screen-capture flow uses for its consent flow).
-            requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_CAMERA_PERM)
+            requestPermissions(
+                arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO),
+                REQ_CAMERA_PERM
+            )
         }
         override fun onCameraCaptureStarted(width: Int, height: Int) {
             nativeCameraCaptureStarted(width, height)
@@ -190,9 +193,10 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_CAMERA_PERM) {
-            val granted = grantResults.isNotEmpty() &&
-                grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
-            cameraCoordinator.onPermissionResult(granted)
+            val cameraGranted = checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val audioGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            val granted = cameraGranted && audioGranted
+            cameraCoordinator.onPermissionResult(cameraGranted)
             nativeCameraPermissionResult(granted)
         }
     }
@@ -321,16 +325,23 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
 
     // Called from Rust via JNI
     @Suppress("unused")
-    private fun probeCameraPermission(): Boolean =
-        checkSelfPermission(android.Manifest.permission.CAMERA) ==
+    private fun probeCameraPermission(): Boolean {
+        val cameraGranted = checkSelfPermission(android.Manifest.permission.CAMERA) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
+        val audioGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        return cameraGranted && audioGranted
+    }
 
     // Called from Rust via JNI. Wraps requestPermissions so the request code
     // (REQ_CAMERA_PERM) stays defined in one place and onRequestPermissionsResult
     // continues to receive it.
     @Suppress("unused")
     private fun requestCameraPermission() {
-        requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_CAMERA_PERM)
+        requestPermissions(
+            arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO),
+            REQ_CAMERA_PERM
+        )
     }
 
     private fun ensureCameraPreviewView(): TextureView {

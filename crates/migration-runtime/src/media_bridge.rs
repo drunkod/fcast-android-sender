@@ -101,7 +101,13 @@ impl StreamBridge {
                             appsrc.set_caps(Some(caps));
                         }
 
-                        if appsrc.push_buffer(buffer.copy()).is_err() {
+                        let mut buffer_copy = buffer.copy();
+                        if let Some(buf_mut) = buffer_copy.get_mut() {
+                            buf_mut.set_pts(gst::ClockTime::NONE);
+                            buf_mut.set_dts(gst::ClockTime::NONE);
+                        }
+
+                        if appsrc.push_buffer(buffer_copy).is_err() {
                             stale.push(consumer_id);
                         }
                     }

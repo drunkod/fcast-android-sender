@@ -1334,6 +1334,12 @@ fn android_main(app: PlatformApp) {
             ""
         };
 
+        let audiosrc_desc = if cfg!(target_os = "android") {
+            "openslessrc ! audioconvert ! audioresample"
+        } else {
+            "audiotestsrc wave=silence is-live=true do-timestamp=true"
+        };
+
         let pipeline_desc = format!(
             "flvmux name=mux streamable=true latency=1000000000 ! rtmp2sink location={url} \
              appsrc name=camera-src is-live=true format=time block=false do-timestamp=true \
@@ -1346,12 +1352,13 @@ fn android_main(app: PlatformApp) {
              ! h264parse config-interval=-1 \
              ! video/x-h264,stream-format=avc,alignment=au \
              ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! mux.video \
-             audiotestsrc wave=silence is-live=true do-timestamp=true \
+             {audiosrc_desc} \
              ! audio/x-raw,rate=44100,channels=1 \
              ! voaacenc ! queue ! mux.audio",
             url = full_url,
             w = width,
             h = height,
+            audiosrc_desc = audiosrc_desc,
         );
         info!("gstpop rtmp: using sink element = rtmp2sink");
         info!("gstpop rtmp: pipeline = {pipeline_desc}");
