@@ -100,6 +100,9 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
             finish()
         }
 
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        window.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+
         Discoverer(this)
 
         coordinator = (application as FcastApp).graph.newCaptureCoordinator(captureCallbacks)
@@ -122,6 +125,13 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
             if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
             }
+        }
+
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO), REQ_CAMERA_PERM)
+        } else {
+            cameraCoordinator.onPermissionResult(true)
+            startDefaultCameraPreview()
         }
     }
 
@@ -198,6 +208,9 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
             val granted = cameraGranted && audioGranted
             cameraCoordinator.onPermissionResult(cameraGranted)
             nativeCameraPermissionResult(granted)
+            if (cameraGranted) {
+                startDefaultCameraPreview()
+            }
         }
     }
 
@@ -371,17 +384,19 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         }
         val params = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
-            dp(220),
-            Gravity.TOP,
-        ).apply {
-            leftMargin = dp(16)
-            rightMargin = dp(16)
-            topMargin = dp(96)
-        }
-        addContentView(view, params)
-        view.visibility = View.GONE
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            Gravity.CENTER
+        )
+        val decorView = window.decorView as android.view.ViewGroup
+        decorView.addView(view, 0, params)
+        view.visibility = View.VISIBLE
         cameraPreviewView = view
         return view
+    }
+
+    private fun startDefaultCameraPreview() {
+        if (cameraPreviewRequested) return
+        startCameraPreview(1, 1920, 1080, 30, false, false, 1.0f) // 1 = Front camera usually, or 0 = Back
     }
 
     private fun maybeStartCameraPreview() {

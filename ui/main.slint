@@ -96,7 +96,7 @@ import { PanelHost } from "components/panel_host.slint";
 
 // ── Root window ───────────────────────────────────────────────────────────────
 export component MainWindow inherits Window {
-    background: Theme.surface-primary;
+    background: PanelBridge.active == Panel.camera-rtmp-stream ? transparent : #0b1020cc; // 80% opacity dark blue overlay normally, fully transparent on camera page
     forward-focus: back-key-scope;
 
     // Populate SafeArea once from the platform's native insets.
