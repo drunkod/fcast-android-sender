@@ -162,11 +162,13 @@ impl CameraSourceNode {
             .map_err(|err| format!("Failed to create videoconvert: {}", err.message))?;
 
         let mirror_elem = if self.mirror {
-            Some(gst::ElementFactory::make("videoflip")
-                .name(format!("camera-videoflip-{}", self.id))
-                .property_from_str("method", "horizontal-flip")
-                .build()
-                .map_err(|err| format!("Failed to create videoflip: {}", err.message))?)
+            Some(
+                gst::ElementFactory::make("videoflip")
+                    .name(format!("camera-videoflip-{}", self.id))
+                    .property_from_str("method", "horizontal-flip")
+                    .build()
+                    .map_err(|err| format!("Failed to create videoflip: {}", err.message))?,
+            )
         } else {
             None
         };
@@ -275,9 +277,7 @@ impl CameraSourceNode {
 
                 if let Some(live) = self.live_pipeline.as_ref() {
                     live.pipeline.set_state(target_state).map_err(|err| {
-                        format!(
-                            "Failed to set camera pipeline state to {target_state:?}: {err:?}"
-                        )
+                        format!("Failed to set camera pipeline state to {target_state:?}: {err:?}")
                     })?;
                 }
 

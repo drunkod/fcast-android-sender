@@ -19,14 +19,14 @@ use mcore::{DeviceEvent, Event, ShouldQuit};
 use slint::ComponentHandle;
 use tracing::{debug, error};
 
-use crate::jni_bridge::helpers::{call_java_method_no_args, JavaMethod};
 #[cfg(target_os = "android")]
 use crate::jni_bridge::helpers::vm;
+use crate::jni_bridge::helpers::{call_java_method_no_args, JavaMethod};
 use crate::platform::gst_init::ensure_gstreamer_initialized;
 use crate::platform::platform_app::PlatformApp;
-use crate::{AppState, BannerSeverity, Bridge, MainWindow, ReceiverItem, GLOB_EVENT_CHAN};
 #[cfg(target_os = "android")]
 use crate::{set_capture_active, CAST_DESTINATION_ID, CAST_LINK_ID, CAST_SOURCE_ID, FRAME_PAIR};
+use crate::{AppState, BannerSeverity, Bridge, MainWindow, ReceiverItem, GLOB_EVENT_CHAN};
 
 pub(crate) struct Application {
     ui_weak: slint::Weak<MainWindow>,
@@ -542,9 +542,7 @@ impl Application {
                     // SAFETY: PlatformApp owns the Activity for the active
                     // Android UI session. The JObject wrapper is used only for
                     // this immediate startScreenCapture call.
-                    let activity = unsafe {
-                        JObject::from_raw(ptr)
-                    };
+                    let activity = unsafe { JObject::from_raw(ptr) };
 
                     let scale_width = scale_width as jni::sys::jint;
                     let scale_height = scale_height as jni::sys::jint;

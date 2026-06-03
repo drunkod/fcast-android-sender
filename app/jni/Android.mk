@@ -64,7 +64,14 @@ GSTREAMER_PLUGINS := \
     nice \
     rsrtp \
     rsrtsp \
-    rswebrtc
+    rswebrtc \
+    flv \
+    rtmp2 \
+    rtmp \
+    x264 \
+    voaacenc \
+    isomp4 \
+    videoparsersbad
 
 GSTREAMER_EXTRA_DEPS := \
     glib-2.0 \

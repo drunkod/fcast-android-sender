@@ -5,7 +5,7 @@ use jni::{objects::JClass, JNIEnv};
 
 #[cfg(target_os = "android")]
 pub fn native_start<'local>(
-    mut env: JNIEnv<'local>,
+    env: JNIEnv<'local>,
     _class: JClass<'local>,
     _config_json: jni::objects::JString<'local>,
 ) -> jni::sys::jstring {
@@ -23,7 +23,7 @@ pub fn native_start<'local>(
 }
 
 #[cfg(target_os = "android")]
-pub fn native_stop<'local>(mut env: JNIEnv<'local>, _class: JClass<'local>) -> jni::sys::jstring {
+pub fn native_stop<'local>(env: JNIEnv<'local>, _class: JClass<'local>) -> jni::sys::jstring {
     let json = match migration_runtime::runtime::shutdown_graph_runtime() {
         Ok(()) => migration_runtime_status_json("stopped", None),
         Err(err) => migration_runtime_status_json("error", Some(&err.to_string())),
@@ -32,7 +32,7 @@ pub fn native_stop<'local>(mut env: JNIEnv<'local>, _class: JClass<'local>) -> j
 }
 
 #[cfg(target_os = "android")]
-pub fn native_status<'local>(mut env: JNIEnv<'local>, _class: JClass<'local>) -> jni::sys::jstring {
+pub fn native_status<'local>(env: JNIEnv<'local>, _class: JClass<'local>) -> jni::sys::jstring {
     let state = if migration_runtime::runtime::is_running() {
         "running"
     } else {

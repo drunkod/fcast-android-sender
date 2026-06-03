@@ -322,6 +322,7 @@ class CaptureEngine {
         }
 
         st.updateTexImage()
+        val timestampNs = st.timestamp
 
         val texMatrix = FloatArray(16)
         st.getTransformMatrix(texMatrix)
@@ -339,6 +340,7 @@ class CaptureEngine {
         MainActivity.nativeProcessFrame(
             yFb.dims.width,
             yFb.dims.height,
+            timestampNs,
             yFb.buf,
             uFb.buf,
             vFb.buf

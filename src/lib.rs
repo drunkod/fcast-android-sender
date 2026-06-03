@@ -1,4 +1,3 @@
-#![allow(clippy::all, unused_variables, dead_code, unused_imports, unused_mut, deprecated)]
 #[cfg(target_os = "android")]
 use jni::objects::{JByteBuffer, JString};
 use mcore::Event;
@@ -114,7 +113,9 @@ pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeGraphCommand<
 #[cfg(target_os = "android")]
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
-pub extern "C" fn Java_org_fcast_android_sender_discovery_FCastDiscoveryListener_serviceFound<'local>(
+pub extern "C" fn Java_org_fcast_android_sender_discovery_FCastDiscoveryListener_serviceFound<
+    'local,
+>(
     env: jni::JNIEnv<'local>,
     class: jni::objects::JClass<'local>,
     name: JString<'local>,
@@ -127,7 +128,9 @@ pub extern "C" fn Java_org_fcast_android_sender_discovery_FCastDiscoveryListener
 #[cfg(target_os = "android")]
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
-pub extern "C" fn Java_org_fcast_android_sender_discovery_FCastDiscoveryListener_serviceLost<'local>(
+pub extern "C" fn Java_org_fcast_android_sender_discovery_FCastDiscoveryListener_serviceLost<
+    'local,
+>(
     env: jni::JNIEnv<'local>,
     class: jni::objects::JClass<'local>,
     name: jni::objects::JString<'local>,
@@ -201,17 +204,38 @@ pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCameraCapture
 #[cfg(target_os = "android")]
 #[allow(non_snake_case)]
 #[unsafe(no_mangle)]
+pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCameraPermissionResult<
+    'local,
+>(
+    env: jni::JNIEnv<'local>,
+    class: jni::objects::JClass<'local>,
+    granted: jni::sys::jboolean,
+) {
+    crate::jni_bridge::main_activity::native_camera_permission_result(env, class, granted)
+}
+
+#[cfg(target_os = "android")]
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
 pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeProcessFrame<'local>(
     env: jni::JNIEnv<'local>,
     class: jni::objects::JClass<'local>,
     width: jni::sys::jint,
     height: jni::sys::jint,
+    timestamp_ns: jni::sys::jlong,
     buffer_y: JByteBuffer<'local>,
     buffer_u: JByteBuffer<'local>,
     buffer_v: JByteBuffer<'local>,
 ) {
     crate::jni_bridge::main_activity::native_process_frame(
-        env, class, width, height, buffer_y, buffer_u, buffer_v,
+        env,
+        class,
+        width,
+        height,
+        timestamp_ns,
+        buffer_y,
+        buffer_u,
+        buffer_v,
     )
 }
 

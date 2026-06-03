@@ -3,8 +3,8 @@
 //! Production implementation forwards to the Android Keystore via JNI.
 //! Tests use [InMemorySecretStore].
 
-use std::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// Errors returned by the secret store.
 #[derive(Debug, thiserror::Error)]
@@ -20,8 +20,12 @@ pub enum SecretError {
 pub struct SecretBytes(Vec<u8>);
 
 impl SecretBytes {
-    pub fn new(v: Vec<u8>) -> Self { Self(v) }
-    pub fn as_slice(&self) -> &[u8] { &self.0 }
+    pub fn new(v: Vec<u8>) -> Self {
+        Self(v)
+    }
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
     pub fn as_str(&self) -> Result<&str, std::str::Utf8Error> {
         std::str::from_utf8(&self.0)
     }
@@ -29,7 +33,9 @@ impl SecretBytes {
 
 impl Drop for SecretBytes {
     fn drop(&mut self) {
-        for b in &mut self.0 { *b = 0; }
+        for b in &mut self.0 {
+            *b = 0;
+        }
     }
 }
 
@@ -53,12 +59,16 @@ pub struct InMemorySecretStore {
 
 impl InMemorySecretStore {
     pub fn new() -> Self {
-        Self { inner: Mutex::new(HashMap::new()) }
+        Self {
+            inner: Mutex::new(HashMap::new()),
+        }
     }
 }
 
 impl Default for InMemorySecretStore {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SecretStore for InMemorySecretStore {
@@ -73,7 +83,10 @@ impl SecretStore for InMemorySecretStore {
     }
 
     fn put(&self, alias: &str, value: &[u8]) -> Result<(), SecretError> {
-        self.inner.lock().unwrap().insert(alias.to_owned(), value.to_vec());
+        self.inner
+            .lock()
+            .unwrap()
+            .insert(alias.to_owned(), value.to_vec());
         Ok(())
     }
 

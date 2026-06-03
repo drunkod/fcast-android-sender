@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   - cameraThread / cameraHandler ........ Camera2 StateCallbacks
  *   - glThread / glHandler ................ EGL + shader pipeline (same as CaptureEngine)
  *
- * Frames delivered via MainActivity.nativeProcessFrame(w, h, Y, U, V).
+ * Frames delivered via MainActivity.nativeProcessFrame(w, h, timestampNs, Y, U, V).
  *
  */
 @SuppressLint("MissingPermission", "NewApi")
@@ -66,10 +66,13 @@ open class CameraCaptureEngine {
 
     private var lastFrameNanos = 0L
     private var minIntervalNanos = 0L
+    private var frameCountDelivered = 0
 
     open fun start(
         context: Context,
         config: CameraCaptureConfig,
+        previewSurface: Surface? = null,
+        captureFrames: Boolean = true,
         onStarted: (width: Int, height: Int) -> Unit,
         onFatalError: (reason: String) -> Unit,
     ) {
@@ -104,8 +107,17 @@ open class CameraCaptureEngine {
                 cameraDevice = camera
                 glHandler.post {
                     try {
-                        initGlAndCreateSession(camera, outDims, uvDims, config, fpsRange, zoomRange,
-                            onStarted, onFatalError)
+                        if (captureFrames) {
+                            initGlAndCreateSession(
+                                camera, outDims, uvDims, config, fpsRange, zoomRange,
+                                previewSurface, onStarted, onFatalError,
+                            )
+                        } else {
+                            initPreviewOnlySession(
+                                camera, outDims, config, fpsRange, zoomRange,
+                                previewSurface, onStarted, onFatalError,
+                            )
+                        }
                     } catch (t: Throwable) {
                         Log.e(TAG, "GL init after onOpened failed", t)
                         running = false
@@ -167,6 +179,7 @@ open class CameraCaptureEngine {
         outDims: CaptureEngine.Dimensions, uvDims: CaptureEngine.Dimensions,
         config: CameraCaptureConfig,
         fpsRange: Range<Int>?, zoomRange: Range<Float>?,
+        previewSurface: Surface?,
         onStarted: (Int, Int) -> Unit, onFatalError: (String) -> Unit,
     ) {
         // 1. Set up EGL + shaders — delegate to CaptureEngine helpers.
@@ -191,7 +204,11 @@ open class CameraCaptureEngine {
                              EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
 
         // 3. Create capture session via the modern SessionConfiguration API.
-        val outputs = listOf(OutputConfiguration(surf))
+        val targetSurfaces = buildList {
+            add(surf)
+            previewSurface?.takeIf { it.isValid }?.let { add(it) }
+        }
+        val outputs = targetSurfaces.map { OutputConfiguration(it) }
         val sessionCfg = SessionConfiguration(
             SessionConfiguration.SESSION_REGULAR,
             outputs,
@@ -200,7 +217,7 @@ open class CameraCaptureEngine {
                 override fun onConfigured(session: CameraCaptureSession) {
                     captureSession = session
                     val req = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                        addTarget(surf)
+                        targetSurfaces.forEach { addTarget(it) }
                         if (config.stabilization) {
                             set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
                                 CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON)
@@ -228,18 +245,79 @@ open class CameraCaptureEngine {
     }
 
     @WorkerThread
+    private fun initPreviewOnlySession(
+        camera: CameraDevice,
+        outDims: CaptureEngine.Dimensions,
+        config: CameraCaptureConfig,
+        fpsRange: Range<Int>?, zoomRange: Range<Float>?,
+        previewSurface: Surface?,
+        onStarted: (Int, Int) -> Unit, onFatalError: (String) -> Unit,
+    ) {
+        val preview = previewSurface?.takeIf { it.isValid }
+            ?: run {
+                onFatalError("Camera preview surface is not ready")
+                return
+            }
+        val sessionCfg = SessionConfiguration(
+            SessionConfiguration.SESSION_REGULAR,
+            listOf(OutputConfiguration(preview)),
+            { it.run() },
+            object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    captureSession = session
+                    val req = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                        addTarget(preview)
+                        if (config.stabilization) {
+                            set(
+                                CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
+                                CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON,
+                            )
+                        }
+                        fpsRange?.let { set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, it) }
+                        if (android.os.Build.VERSION.SDK_INT >= 30 && zoomRange != null) {
+                            set(
+                                CaptureRequest.CONTROL_ZOOM_RATIO,
+                                config.zoom.coerceIn(zoomRange.lower, zoomRange.upper),
+                            )
+                        }
+                    }
+                    try {
+                        session.setRepeatingRequest(req.build(), null, cameraHandler)
+                        onStarted(outDims.width, outDims.height)
+                    } catch (e: CameraAccessException) {
+                        onFatalError("setRepeatingRequest failed: ${e.message}")
+                    }
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+                    onFatalError("Camera preview session configuration failed")
+                }
+            },
+        )
+        camera.createCaptureSession(sessionCfg)
+    }
+
+    @WorkerThread
     private fun onFrameAvailable() {
         if (!running || !shouldCapture.get()) return
         val now = System.nanoTime()
-        if (now - lastFrameNanos < minIntervalNanos) return
-        lastFrameNanos = now
-        try { pumpOneFrame() } catch (e: RuntimeException) {
+        val deliver = now - lastFrameNanos >= minIntervalNanos
+        try {
+            pumpOneFrame(deliver)
+            if (deliver) {
+                lastFrameNanos = now
+                frameCountDelivered++
+                if (frameCountDelivered <= 10 || frameCountDelivered % 30 == 0) {
+                    Log.d(TAG, "onFrameAvailable: frame #$frameCountDelivered")
+                }
+            }
+        } catch (e: RuntimeException) {
             Log.e(TAG, "pumpOneFrame failed", e)
         }
     }
 
     @WorkerThread
-    private fun pumpOneFrame() {
+    private fun pumpOneFrame(deliver: Boolean) {
         val st = surfaceTexture ?: return
         val yFb = yFramebuffer ?: return
         val uFb = uFramebuffer ?: return
@@ -254,6 +332,12 @@ open class CameraCaptureEngine {
             throw RuntimeException("EGL make current failed: ${EGL14.eglGetError()}")
         }
         st.updateTexImage()
+        val timestampNs = st.timestamp
+        if (!deliver) {
+            EGL14.eglMakeCurrent(disp, EGL14.EGL_NO_SURFACE,
+                                 EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT)
+            return
+        }
         val tex = FloatArray(16); st.getTransformMatrix(tex)
 
         CaptureEngine.renderToFb(oesTexId, yFb, yP, tex, vboId)
@@ -266,6 +350,7 @@ open class CameraCaptureEngine {
 
         MainActivity.nativeProcessFrame(
             yFb.dims.width, yFb.dims.height,
+            timestampNs,
             yFb.buf, uFb.buf, vFb.buf,
         )
     }

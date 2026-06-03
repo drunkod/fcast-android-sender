@@ -1,3 +1,4 @@
+use crate::FramePair;
 use crate::{
     node_manager::NodeManager,
     protocol::{Command, CommandResult, ControllerMessage, ServerMessage},
@@ -16,7 +17,6 @@ use std::{
     time::Duration,
 };
 use tracing::{error, info, warn};
-use crate::FramePair;
 
 lazy_static::lazy_static! {
     static ref GRAPH_NODE_MANAGER: Mutex<NodeManager> = Mutex::new(NodeManager::default());

@@ -1,8 +1,8 @@
 pub mod migration;
 
-use std::path::PathBuf;
+pub use crate::backend::persistence::{CameraRtmpConfig, StoredBackendConfig};
 use once_cell::sync::OnceCell;
-pub use crate::backend::persistence::{StoredBackendConfig, CameraRtmpConfig};
+use std::path::PathBuf;
 
 static FILES_DIR: OnceCell<PathBuf> = OnceCell::new();
 
@@ -29,7 +29,8 @@ where
     F: FnOnce(&mut StoredBackendConfig),
 {
     if let Some(dir) = get_files_dir() {
-        let mut cfg = StoredBackendConfig::load(dir).unwrap_or_else(|_| StoredBackendConfig::defaults());
+        let mut cfg =
+            StoredBackendConfig::load(dir).unwrap_or_else(|_| StoredBackendConfig::defaults());
         f(&mut cfg);
         cfg.save(dir).map_err(|e| e.to_string())
     } else {

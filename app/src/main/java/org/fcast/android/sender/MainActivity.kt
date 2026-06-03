@@ -4,12 +4,18 @@ import android.app.NativeActivity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.SurfaceTexture
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.util.Log
+import android.view.Gravity
 import android.view.KeyEvent
+import android.view.Surface
+import android.view.TextureView
+import android.view.View
+import android.widget.FrameLayout
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -36,6 +42,10 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     private lateinit var controller: SenderController
 
     private val activityScope = MainScope()
+    private var cameraPreviewView: TextureView? = null
+    private var cameraPreviewSurface: Surface? = null
+    private var cameraPreviewConfig: CameraCaptureConfig? = null
+    private var cameraPreviewRequested = false
 
     private val cameraCallbacks = object : CameraCaptureCoordinator.Callbacks {
         override fun onCameraPermissionNeeded() {
@@ -113,6 +123,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     }
 
     override fun onDestroy() {
+        destroyCameraPreview()
         controller.shutdown()
         coordinator.shutdown()
         cameraCoordinator.shutdown()
@@ -182,6 +193,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
             val granted = grantResults.isNotEmpty() &&
                 grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
             cameraCoordinator.onPermissionResult(granted)
+            nativeCameraPermissionResult(granted)
         }
     }
 
@@ -262,15 +274,49 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         cameraIdx: Int, width: Int, height: Int, fps: Int,
         mirror: Boolean, stabilization: Boolean, zoom: Float,
     ) {
-        cameraCoordinator.startCapture(
-            CameraCaptureConfig(cameraIdx, width, height, fps, mirror, stabilization, zoom)
-        )
+        runOnUiThread {
+            cameraCoordinator.startCapture(
+                CameraCaptureConfig(cameraIdx, width, height, fps, mirror, stabilization, zoom),
+                cameraPreviewSurface?.takeIf { it.isValid },
+            )
+        }
     }
 
     // Called from Rust via JNI
     @Suppress("unused")
     private fun stopCameraCapture() {
-        cameraCoordinator.stopCapture()
+        runOnUiThread {
+            cameraCoordinator.stopCapture()
+            maybeStartCameraPreview()
+        }
+    }
+
+    // Called from Rust via JNI
+    @Suppress("unused")
+    private fun startCameraPreview(
+        cameraIdx: Int, width: Int, height: Int, fps: Int,
+        mirror: Boolean, stabilization: Boolean, zoom: Float,
+    ) {
+        runOnUiThread {
+            cameraPreviewRequested = true
+            cameraPreviewConfig = CameraCaptureConfig(cameraIdx, width, height, fps, mirror, stabilization, zoom)
+            ensureCameraPreviewView().visibility = View.VISIBLE
+            maybeStartCameraPreview()
+        }
+    }
+
+    // Called from Rust via JNI
+    @Suppress("unused")
+    private fun stopCameraPreview() {
+        runOnUiThread {
+            cameraPreviewRequested = false
+            if (!cameraCoordinator.isCapturing) {
+                cameraCoordinator.stopPreview()
+                cameraPreviewView?.visibility = View.GONE
+            } else {
+                cameraPreviewView?.visibility = View.INVISIBLE
+            }
+        }
     }
 
     // Called from Rust via JNI
@@ -278,6 +324,72 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     private fun probeCameraPermission(): Boolean =
         checkSelfPermission(android.Manifest.permission.CAMERA) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    // Called from Rust via JNI. Wraps requestPermissions so the request code
+    // (REQ_CAMERA_PERM) stays defined in one place and onRequestPermissionsResult
+    // continues to receive it.
+    @Suppress("unused")
+    private fun requestCameraPermission() {
+        requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_CAMERA_PERM)
+    }
+
+    private fun ensureCameraPreviewView(): TextureView {
+        cameraPreviewView?.let { return it }
+        val view = TextureView(this).apply {
+            isOpaque = true
+            surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                    cameraPreviewSurface?.release()
+                    cameraPreviewSurface = Surface(surfaceTexture)
+                    maybeStartCameraPreview()
+                }
+
+                override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
+
+                override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                    if (!cameraCoordinator.isCapturing) {
+                        cameraCoordinator.stopPreview()
+                    }
+                    cameraPreviewSurface?.release()
+                    cameraPreviewSurface = null
+                    return true
+                }
+
+                override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
+            }
+        }
+        val params = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            dp(220),
+            Gravity.TOP,
+        ).apply {
+            leftMargin = dp(16)
+            rightMargin = dp(16)
+            topMargin = dp(96)
+        }
+        addContentView(view, params)
+        view.visibility = View.GONE
+        cameraPreviewView = view
+        return view
+    }
+
+    private fun maybeStartCameraPreview() {
+        if (!cameraPreviewRequested || cameraCoordinator.isCapturing) return
+        val config = cameraPreviewConfig ?: return
+        val surface = cameraPreviewSurface?.takeIf { it.isValid } ?: return
+        cameraCoordinator.startPreview(config, surface)
+    }
+
+    private fun destroyCameraPreview() {
+        cameraPreviewRequested = false
+        cameraCoordinator.stopPreview()
+        cameraPreviewSurface?.release()
+        cameraPreviewSurface = null
+        cameraPreviewView = null
+    }
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     // ── JNI symbol shims ─────────────────────────────────────────────────
     // Names match Rust's Java_org_fcast_android_sender_MainActivity_native*.
@@ -288,6 +400,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     external fun nativeCameraCaptureStarted(width: Int, height: Int)
     external fun nativeCameraCaptureStopped()
     external fun nativeCameraCaptureFailed(reason: String)
+    external fun nativeCameraPermissionResult(granted: Boolean)
     external fun nativeQrScanResult(result: String)
     external fun nativeSlintApplyState(state: Int, banner: String, severity: Int)
 
@@ -303,7 +416,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         const val ACTION_MEDIA_PROJECTION_STARTED = "org.fcast.android.sender.MEDIA_PROJECTION_STARTED"
 
         @JvmStatic
-        external fun nativeProcessFrame(width: Int, height: Int, bufferY: ByteBuffer, bufferU: ByteBuffer, bufferV: ByteBuffer)
+        external fun nativeProcessFrame(width: Int, height: Int, timestampNs: Long, bufferY: ByteBuffer, bufferU: ByteBuffer, bufferV: ByteBuffer)
 
         @JvmStatic
         external fun nativeGraphCommand(payloadJson: String): String

@@ -110,7 +110,9 @@ impl PlaybackTracker {
                             self.started_count
                         );
                     }
-                    PipelineEvent::PipelineRemoved { pipeline_id } if self.pending.remove(pipeline_id) => {
+                    PipelineEvent::PipelineRemoved { pipeline_id }
+                        if self.pending.remove(pipeline_id) =>
+                    {
                         self.had_error = true;
                         warn!(
                             "Playback mode: tracked pipeline '{}' was removed externally ({}/{} remaining)",

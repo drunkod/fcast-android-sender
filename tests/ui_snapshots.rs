@@ -30,7 +30,9 @@ fn wire_panel_bridge(ui: &MainWindow) {
             let Some(ui) = ui_weak.upgrade() else { return };
             let pb = ui.global::<PanelBridge>();
             let current = pb.get_active();
-            if current == p { return; }
+            if current == p {
+                return;
+            }
             if current != Panel::None {
                 stack.borrow_mut().insert(0, current);
             }
@@ -101,7 +103,11 @@ fn ui_snapshots_all() {
         assert_eq!(pb.get_active(), Panel::Settings, "pop returns to Settings");
 
         pb.invoke_pop();
-        assert_eq!(pb.get_active(), Panel::None, "pop to root returns Panel::None");
+        assert_eq!(
+            pb.get_active(),
+            Panel::None,
+            "pop to root returns Panel::None"
+        );
     }
 
     // 2. panel_bridge_push_same_panel_is_noop
@@ -163,14 +169,16 @@ fn ui_snapshots_all() {
         // raw-top 0 → top must be clamped to min-top (24px).
         sa.set_raw_top(0.0);
         assert_eq!(
-            sa.get_top(), 24.0_f32,
+            sa.get_top(),
+            24.0_f32,
             "SafeArea.top must equal min-top (24px) when raw-top (0) < min-top"
         );
 
         // raw-top 40 > min-top 24 → top passes through as-is.
         sa.set_raw_top(40.0);
         assert_eq!(
-            sa.get_top(), 40.0_f32,
+            sa.get_top(),
+            40.0_f32,
             "SafeArea.top must equal raw-top when raw-top > min-top"
         );
     }
@@ -184,13 +192,15 @@ fn ui_snapshots_all() {
         // This is the key regression guard against the old 65px hard-coded floor.
         sa.set_raw_bottom(16.0);
         assert_eq!(
-            sa.get_bottom(), 16.0_f32,
+            sa.get_bottom(),
+            16.0_f32,
             "SafeArea.bottom should equal raw-bottom (16px) without a 65px floor"
         );
 
         sa.set_raw_bottom(0.0);
         assert_eq!(
-            sa.get_bottom(), 0.0_f32,
+            sa.get_bottom(),
+            0.0_f32,
             "SafeArea.bottom should be 0 on landscape tablets with no bottom inset"
         );
     }

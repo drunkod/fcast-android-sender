@@ -425,6 +425,8 @@ export global Bridge {
 
     callback start-camera-rtmp-stream();
     callback stop-camera-rtmp-stream();
+    callback start-camera-rtmp-preview();
+    callback stop-camera-rtmp-preview();
     callback request-cam-rtmp-camera-permission();
     pure callback url-looks-valid(string) -> bool;
 

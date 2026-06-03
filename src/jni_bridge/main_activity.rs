@@ -15,9 +15,9 @@ use mcore::Event;
 use tracing::{debug, error, info, warn};
 
 #[cfg(target_os = "android")]
-use slint::ComponentHandle;
-#[cfg(target_os = "android")]
 use crate::jni_bridge::helpers::{handle_back_request, jstring_to_string, process_frame};
+#[cfg(target_os = "android")]
+use slint::ComponentHandle;
 
 /// Local camera-capture lifecycle event. Kept separate from `mcore::Event`
 /// because mcore is an external pinned dependency. Routed via
@@ -27,6 +27,7 @@ pub enum CameraEvent {
     Started { width: u32, height: u32 },
     Stopped,
     Failed { reason: String },
+    PermissionResult { granted: bool },
 }
 
 #[cfg(target_os = "android")]
@@ -92,9 +93,10 @@ pub fn native_camera_capture_started<'local>(
     height: jni::sys::jint,
 ) {
     debug!("camera capture started {}x{}", width, height);
-    if let Err(e) = crate::GLOB_CAMERA_EVENT_CHAN.0.send(
-        CameraEvent::Started { width: width as u32, height: height as u32 },
-    ) {
+    if let Err(e) = crate::GLOB_CAMERA_EVENT_CHAN.0.send(CameraEvent::Started {
+        width: width as u32,
+        height: height as u32,
+    }) {
         error!(?e, "send CameraEvent::Started");
     }
 }
@@ -113,7 +115,22 @@ pub fn native_camera_capture_failed<'local>(
 ) {
     let reason = jstring_to_string(&mut env, &reason).unwrap_or_default();
     debug!("camera capture failed: {reason}");
-    let _ = crate::GLOB_CAMERA_EVENT_CHAN.0.send(CameraEvent::Failed { reason });
+    let _ = crate::GLOB_CAMERA_EVENT_CHAN
+        .0
+        .send(CameraEvent::Failed { reason });
+}
+
+#[cfg(target_os = "android")]
+pub fn native_camera_permission_result<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    granted: jni::sys::jboolean,
+) {
+    let granted = granted != 0;
+    debug!("camera permission result: granted={granted}");
+    let _ = crate::GLOB_CAMERA_EVENT_CHAN
+        .0
+        .send(CameraEvent::PermissionResult { granted });
 }
 
 #[cfg(target_os = "android")]
@@ -122,11 +139,20 @@ pub fn native_process_frame<'local>(
     _class: JClass<'local>,
     width: jni::sys::jint,
     height: jni::sys::jint,
+    timestamp_ns: jni::sys::jlong,
     buffer_y: JByteBuffer<'local>,
     buffer_u: JByteBuffer<'local>,
     buffer_v: JByteBuffer<'local>,
 ) {
-    if let Err(err) = process_frame(env, width, height, buffer_y, buffer_u, buffer_v) {
+    if let Err(err) = process_frame(
+        env,
+        width,
+        height,
+        timestamp_ns,
+        buffer_y,
+        buffer_u,
+        buffer_v,
+    ) {
         error!(?err, "Failed to process frame");
     }
 }

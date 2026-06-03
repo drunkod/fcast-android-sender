@@ -5,22 +5,23 @@ use parking_lot::Mutex;
 use slint::ComponentHandle;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tracing::{debug, error};
+use tracing::{debug, error, info, warn};
 
-use crate::*;
-use crate::application::Application;
 use crate::application::defaults::{default_presets, default_quick_actions};
+use crate::application::Application;
 use crate::command::http_runner::start_migrated_command_server;
+use crate::command::legacy_tests::migration_test_log_name;
 use crate::command::legacy_tests::{
     log_ui_test_status, run_graph_smoke_test, run_legacy_http_crossfade_test,
     run_legacy_http_getinfo_test,
 };
-use crate::command::legacy_tests::migration_test_log_name;
 use crate::jni_bridge::helpers::{
-    call_java_method_no_args, handle_back_request, init_vm, resolve_android_files_dir, JavaMethod,
+    cache_app_class_loader, call_java_method_no_args, handle_back_request, init_vm,
+    resolve_android_files_dir, JavaMethod,
 };
 use crate::platform::panel_stack::PanelStack;
 use crate::platform::platform_app::{spawn_recording_ticker, PlatformApp, RecordingTickerState};
+use crate::*;
 
 const LEGACY_COMMAND_BIND_ADDR: &str = "0.0.0.0:8080";
 
@@ -48,10 +49,22 @@ fn android_main(app: PlatformApp) {
     assert!(!ptr.is_null(), "JavaVM ptr is null");
     // SAFETY: PlatformApp is provided by Slint's Android bootstrap and exposes
     // the process JavaVM pointer while android_main is starting.
-    let vm = unsafe {
-        jni::JavaVM::from_raw(ptr).unwrap()
-    };
+    let vm = unsafe { jni::JavaVM::from_raw(ptr).unwrap() };
     let vm = init_vm(vm);
+    // Cache the app ClassLoader via the Activity instance (ANativeActivity::clazz).
+    // NativeActivity native threads use the bootstrap classloader, so find_class
+    // can't see app dex classes. Calling getClassLoader() on the live Activity
+    // object gives the full app classloader and works from any thread thereafter.
+    {
+        let act_ptr = app.activity_as_ptr() as *mut jni::sys::_jobject;
+        assert!(!act_ptr.is_null(), "Activity ptr is null");
+        // SAFETY: PlatformApp holds the ANativeActivity, and activity_as_ptr()
+        // returns ANativeActivity::clazz which is the live Activity instance for
+        // the lifetime of the process.
+        let activity = unsafe { jni::objects::JObject::from_raw(act_ptr) };
+        let mut env = vm.get_env().expect("get_env for class loader cache");
+        cache_app_class_loader(&mut env, &activity);
+    }
     crate::app::init(crate::app::App::production(vm.clone()));
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
@@ -482,12 +495,11 @@ fn android_main(app: PlatformApp) {
     b.set_cam_rtmp_stabilization(cfg.stabilization);
     b.set_cam_rtmp_zoom(cfg.zoom.max(0.5));
     b.set_cam_rtmp_camera_permission(
-        crate::jni_bridge::camera::upcall_probe_camera_permission().unwrap_or(false)
+        crate::jni_bridge::camera::upcall_probe_camera_permission().unwrap_or(false),
     );
 
-    if let Ok(Some(key)) = crate::secret::load("cam_rtmp_stream_key") {
-        b.set_cam_rtmp_stream_key(key.into());
-    }
+    let saved_key = crate::secret::load("cam_rtmp_stream_key").ok().flatten();
+    b.set_cam_rtmp_stream_key(saved_key.as_deref().unwrap_or("Byhag83gMx").into());
 
     // ── Phase 8 / Cluster D1 — Backup / reset handlers ──────────────────
     ui.global::<Bridge>().on_export_settings({
@@ -836,6 +848,11 @@ fn android_main(app: PlatformApp) {
             stack.push_panel(current);
             pb.set_active(p);
             pb.set_stack(stack.as_model());
+            if p == Panel::CameraRtmpStream {
+                ui.global::<Bridge>().invoke_start_camera_rtmp_preview();
+            } else {
+                ui.global::<Bridge>().invoke_stop_camera_rtmp_preview();
+            }
         }
     });
 
@@ -845,8 +862,14 @@ fn android_main(app: PlatformApp) {
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
             let pb = ui.global::<PanelBridge>();
-            pb.set_active(stack.pop_panel());
+            let next = stack.pop_panel();
+            pb.set_active(next);
             pb.set_stack(stack.as_model());
+            if next == Panel::CameraRtmpStream {
+                ui.global::<Bridge>().invoke_start_camera_rtmp_preview();
+            } else {
+                ui.global::<Bridge>().invoke_stop_camera_rtmp_preview();
+            }
         }
     });
 
@@ -855,6 +878,11 @@ fn android_main(app: PlatformApp) {
         move |p: Panel| {
             if let Some(ui) = ui_weak.upgrade() {
                 ui.global::<PanelBridge>().set_active(p);
+                if p == Panel::CameraRtmpStream {
+                    ui.global::<Bridge>().invoke_start_camera_rtmp_preview();
+                } else {
+                    ui.global::<Bridge>().invoke_stop_camera_rtmp_preview();
+                }
             }
         }
     });
@@ -868,6 +896,7 @@ fn android_main(app: PlatformApp) {
             let pb = ui.global::<PanelBridge>();
             pb.set_active(Panel::None);
             pb.set_stack(stack.as_model());
+            ui.global::<Bridge>().invoke_stop_camera_rtmp_preview();
         }
     });
 
@@ -1220,8 +1249,11 @@ fn android_main(app: PlatformApp) {
         log::info!("pick-test-overlay-image: stub — file picker not yet implemented");
     });
 
+    use crate::jni_bridge::camera::{
+        upcall_start_camera_capture, upcall_start_camera_preview, upcall_stop_camera_capture,
+        upcall_stop_camera_preview,
+    };
     use migration_runtime::protocol::{Command, CommandResult, DestinationFamily};
-    use crate::jni_bridge::camera::{upcall_start_camera_capture, upcall_stop_camera_capture};
 
     fn tear_down_migration() {
         for id in ["cam-rtmp-src", "cam-rtmp-dest"] {
@@ -1260,6 +1292,7 @@ fn android_main(app: PlatformApp) {
             .await;
     }
 
+    #[allow(clippy::too_many_arguments)] // start params form a single conceptual record
     async fn start_camera_rtmp_via_gstpop(
         ui: slint::Weak<MainWindow>,
         cam_idx: u32,
@@ -1273,30 +1306,54 @@ fn android_main(app: PlatformApp) {
     ) {
         use gstpop_runtime::EmbeddedState;
 
+        // Ensure any stale Migration RTMP pipeline is torn down before starting
+        // GstPop — otherwise the RTMP server rejects with "Already publishing".
+        tear_down_migration();
+
+        info!("gstpop rtmp: starting embedded server on port {CAM_RTMP_GSTPOP_PORT}");
         let status = gstpop_runtime::start_embedded(CAM_RTMP_GSTPOP_PORT).await;
+        info!("gstpop rtmp: embedded server status = {:?}", status.state);
         if !matches!(status.state, EmbeddedState::Running) {
             let msg = format!("gst-pop daemon not running: {:?}", status.last_error);
             return fail(&ui, msg);
         }
 
         let ws_url = format!("ws://127.0.0.1:{}/", status.port);
+        info!("gstpop rtmp: connecting client to {ws_url}");
         let client = match GstPopClient::connect(&ws_url, None).await {
-            Ok(c) => Arc::new(c),
+            Ok(c) => {
+                info!("gstpop rtmp: ws client connected");
+                Arc::new(c)
+            }
             Err(e) => return fail(&ui, format!("client connect: {e:#}")),
         };
 
-        let sink = migration_runtime::nodes::destination::pick_rtmp_sink();
-        let flip = if mirror { "videoflip method=horizontal-flip ! " } else { "" };
+        let _flip = if mirror {
+            "videoflip method=horizontal-flip ! "
+        } else {
+            ""
+        };
 
         let pipeline_desc = format!(
-            "appsrc name=camera-src format=time is-live=true do-timestamp=true \
-             caps=video/x-raw,format=I420,width={w},height={h},framerate={fps}/1 \
-             ! videoconvert ! {flip}\
-             x264enc bitrate=4000 speed-preset=ultrafast tune=zerolatency \
-             ! h264parse ! queue ! flvmux streamable=true \
-             ! {sink} location={url}",
-            w = width, h = height, fps = fps, url = full_url, sink = sink, flip = flip,
+            "flvmux name=mux streamable=true latency=1000000000 ! rtmp2sink location={url} \
+             appsrc name=camera-src is-live=true format=time block=false do-timestamp=true \
+             ! video/x-raw,format=I420,width={w},height={h},framerate={fps}/1 \
+             ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 \
+             ! videoconvert \
+             ! x264enc bitrate=2000 speed-preset=ultrafast tune=zerolatency key-int-max={fps} bframes=0 \
+             ! h264parse config-interval=-1 \
+             ! video/x-h264,stream-format=avc,alignment=au \
+             ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! mux.video \
+             audiotestsrc wave=silence is-live=true \
+             ! audio/x-raw,rate=44100,channels=1 \
+             ! voaacenc ! queue ! mux.audio",
+            url = full_url,
+            w = width,
+            h = height,
+            fps = fps,
         );
+        info!("gstpop rtmp: using sink element = rtmp2sink");
+        info!("gstpop rtmp: pipeline = {pipeline_desc}");
 
         let pid_val = match client
             .call(
@@ -1305,38 +1362,40 @@ fn android_main(app: PlatformApp) {
             )
             .await
         {
-            Ok(val) => val,
+            Ok(val) => {
+                info!("gstpop rtmp: create_pipeline ok: {val}");
+                val
+            }
             Err(e) => return fail(&ui, format!("create_pipeline: {e:#}")),
         };
         let pid = match pid_val.get("pipeline_id").and_then(|v| v.as_str()) {
             Some(p) => p.to_string(),
-            None => return fail(&ui, "create_pipeline response missing pipeline_id".to_string()),
-        };
-
-        if let Err(e) = client
-            .call("play", serde_json::json!({ "pipeline_id": pid }))
-            .await
-        {
-            let _ = client
-                .call(
-                    "remove_pipeline",
-                    serde_json::json!({ "pipeline_id": pid }),
+            None => {
+                return fail(
+                    &ui,
+                    "create_pipeline response missing pipeline_id".to_string(),
                 )
-                .await;
-            return fail(&ui, format!("play: {e:#}"));
-        }
+            }
+        };
+        info!("gstpop rtmp: pipeline_id = {pid}");
 
-        // Open Camera2 via the JNI upcall.
-        if let Err(e) =
-            upcall_start_camera_capture(cam_idx, width, height, fps, mirror, stab, zoom)
+        // Subscribe to pipeline events before issuing play so we don't miss a
+        // fast state transition or an immediate connection error.
+        let mut event_rx = client.subscribe();
+        let pid_for_event = pid.clone();
+
+        // Start the camera BEFORE calling play. With appsrc is-live=true and a
+        // network sink (rtmpsink), flvmux won't produce FLV output until it has
+        // a video frame, and rtmpsink won't complete its PLAYING state change
+        // until it can write the first packet. Feeding camera data first
+        // unblocks the state change so play() returns in <1s rather than after
+        // the 30s gstpop timeout.
+        if let Err(e) = upcall_start_camera_capture(cam_idx, width, height, fps, mirror, stab, zoom)
         {
-            let _ = client
-                .call("stop", serde_json::json!({ "pipeline_id": pid }))
-                .await;
             let _ = client
                 .call(
                     "remove_pipeline",
-                    serde_json::json!({ "pipeline_id": pid }),
+                    serde_json::json!({ "pipeline_id": &pid }),
                 )
                 .await;
             return fail(&ui, format!("startCameraCapture: {e}"));
@@ -1349,41 +1408,184 @@ fn android_main(app: PlatformApp) {
             active: active_flag.clone(),
         });
 
-        let frame_pair = crate::FRAME_PAIR.clone();
-        let client_clone = client.clone();
-        let pid_clone = pid.clone();
+        // Start the frame push loop BEFORE calling play so that flvmux has
+        // video data and can preroll, allowing rtmpsink to connect without
+        // hitting the 30s gstpop timeout. PTS is set to u64::MAX (NONE) so
+        // appsrc's do-timestamp=true assigns the pipeline clock time, keeping
+        // video timestamps in sync with audiotestsrc (both use pipeline clock).
+        {
+            let frame_pair = crate::FRAME_PAIR.clone();
+            let client_clone = client.clone();
+            let pid_clone = pid.clone();
+            let active_flag_push = active_flag.clone();
 
-        tokio::spawn(async move {
-            loop {
-                if !active_flag.load(Ordering::SeqCst) {
-                    break;
-                }
-                let buffer_data = {
-                    let mut frame_guard = frame_pair.frame.lock();
-                    while (*frame_guard).is_none() {
-                        if !active_flag.load(Ordering::SeqCst) {
-                            return;
-                        }
-                        frame_pair
-                            .cond
-                            .wait_for(&mut frame_guard, std::time::Duration::from_millis(50));
+            tokio::spawn(async move {
+                let mut frame_count: u64 = 0;
+
+                loop {
+                    if !active_flag_push.load(Ordering::SeqCst) {
+                        break;
                     }
-                    let vframe = (*frame_guard).take().unwrap();
-                    let buffer = vframe.buffer().to_owned();
-                    let pts_ns = buffer.pts().map(|p| p.nseconds()).unwrap_or(0);
-                    let mapped = buffer.map_readable().unwrap();
-                    (mapped.to_vec(), pts_ns)
-                };
+                    if frame_count < 10 || frame_count % 30 == 0 {
+                        info!("gstpop push: waiting for frame={frame_count}");
+                    }
+                    let frame_bytes = {
+                        let mut frame_guard = frame_pair.frame.lock();
+                        let mut waits: u32 = 0;
+                        while (*frame_guard).is_none() {
+                            if !active_flag_push.load(Ordering::SeqCst) {
+                                return;
+                            }
+                            frame_pair
+                                .cond
+                                .wait_for(&mut frame_guard, std::time::Duration::from_millis(50));
+                            waits += 1;
+                            if waits % 20 == 0 {
+                                info!(
+                                    "gstpop push: still waiting frame={frame_count} waits={waits}"
+                                );
+                            }
+                        }
+                        let vframe = (*frame_guard).take().unwrap();
+                        let buffer = vframe.buffer().to_owned();
+                        let mapped = buffer.map_readable().unwrap();
+                        mapped.to_vec()
+                    };
 
-                if let Err(e) = client_clone
-                    .push_buffer(&pid_clone, "camera-src", &buffer_data.0, buffer_data.1)
-                    .await
-                {
-                    tracing::error!("gst-pop push_buffer failed: {}", e);
-                    break;
+                    // u64::MAX = PTS_NONE: appsrc do-timestamp=true assigns pipeline clock.
+                    let pts_ns = u64::MAX;
+
+                    // Log every frame for the first 30, then every 30 frames. Include avg_Y always.
+                    if frame_count < 30 || frame_count % 30 == 0 {
+                        let y_len = (width * height) as usize;
+                        let avg_y: u32 = frame_bytes[..y_len.min(frame_bytes.len())]
+                            .iter()
+                            .map(|&b| b as u32)
+                            .sum::<u32>()
+                            / y_len as u32;
+                        info!(
+                            "gstpop push: frame={frame_count} avg_Y={avg_y} size={}",
+                            frame_bytes.len()
+                        );
+                    }
+
+                    if let Err(e) = client_clone
+                        .push_buffer(&pid_clone, "camera-src", &frame_bytes, pts_ns)
+                        .await
+                    {
+                        error!("gst-pop push_buffer failed at frame={frame_count}: {e}");
+                        break;
+                    }
+
+                    if frame_count < 30 || frame_count % 30 == 0 {
+                        info!("gstpop push: frame={frame_count} sent ok");
+                    }
+
+                    frame_count += 1;
+                }
+                info!("gstpop push_buffer loop ended after {frame_count} frames");
+            });
+        }
+
+        // Wait for the first frame to arrive before play() so flvmux has data.
+        info!("gstpop rtmp: waiting for first camera frame before play");
+        {
+            let frame_pair_wait = crate::FRAME_PAIR.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut guard = frame_pair_wait.frame.lock();
+                frame_pair_wait
+                    .cond
+                    .wait_for(&mut guard, std::time::Duration::from_secs(5));
+            })
+            .await
+            .ok();
+        }
+        info!("gstpop rtmp: first frame ready, calling play");
+
+        info!("gstpop rtmp: calling play for pipeline {pid}");
+        let play_client = client.clone();
+        let play_pid = pid.clone();
+        let mut play_rpc = tokio::spawn(async move {
+            play_client
+                .call("play", serde_json::json!({ "pipeline_id": &play_pid }))
+                .await
+                .map(|_| ())
+        });
+        let mut play_rpc_done = false;
+        let playing_deadline = tokio::time::sleep(std::time::Duration::from_secs(45));
+        tokio::pin!(playing_deadline);
+
+        let play_result: Result<(), anyhow::Error> = loop {
+            tokio::select! {
+                _ = &mut playing_deadline => {
+                    break Err(anyhow::anyhow!("timed out waiting for pipeline to reach playing"));
+                }
+                rpc = &mut play_rpc, if !play_rpc_done => {
+                    play_rpc_done = true;
+                    match rpc {
+                        Ok(Ok(())) => {
+                            info!("gstpop rtmp: play rpc accepted, waiting for playing state");
+                        }
+                        Ok(Err(e)) => {
+                            info!("gstpop rtmp: play rpc returned error: {e:#}");
+                            break Err(e);
+                        }
+                        Err(e) => {
+                            break Err(anyhow::anyhow!("play task failed: {e}"));
+                        }
+                    }
+                }
+                event = event_rx.recv() => {
+                    match event {
+                        Ok(event) => {
+                            info!("gstpop rtmp: event = {event:?}");
+                            match event {
+                                gstpop_runtime::Event::StateChanged { ref pipeline_id, ref new_state, ref old_state }
+                                    if *pipeline_id == pid_for_event =>
+                                {
+                                    info!("gstpop rtmp: pipeline {pipeline_id} state {old_state} -> {new_state}");
+                                    if new_state == "playing" {
+                                        break Ok(());
+                                    }
+                                }
+                                gstpop_runtime::Event::Error { ref pipeline_id, ref message }
+                                    if *pipeline_id == pid_for_event =>
+                                {
+                                    error!("gstpop rtmp: pipeline error: {message}");
+                                    break Err(anyhow::anyhow!("{message}"));
+                                }
+                                _ => {}
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("gstpop rtmp: event channel lagged by {n}");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            warn!("gstpop rtmp: event channel closed");
+                            break Err(anyhow::anyhow!("event channel closed before playing"));
+                        }
+                    }
                 }
             }
-        });
+        };
+
+        if let Err(e) = play_result {
+            error!("gstpop rtmp: play failed: {e:#}");
+            let _ = client
+                .call("stop", serde_json::json!({ "pipeline_id": &pid }))
+                .await;
+            let _ = client
+                .call(
+                    "remove_pipeline",
+                    serde_json::json!({ "pipeline_id": &pid }),
+                )
+                .await;
+            // Stop camera too since we started it before play.
+            let _ = upcall_stop_camera_capture();
+            *CAM_RTMP_GSTPOP_SESSION.lock() = None;
+            return fail(&ui, format!("play: {e:#}"));
+        }
+        info!("gstpop rtmp: pipeline is playing");
     }
 
     async fn stop_camera_rtmp_via_gstpop(ui: slint::Weak<MainWindow>) {
@@ -1401,17 +1603,55 @@ fn android_main(app: PlatformApp) {
         });
     }
 
-    ui.global::<Bridge>().on_url_looks_valid(|url: slint::SharedString| {
-        url.starts_with("rtmp://") || url.starts_with("rtmps://")
+    ui.global::<Bridge>()
+        .on_url_looks_valid(|url: slint::SharedString| {
+            url.starts_with("rtmp://") || url.starts_with("rtmps://")
+        });
+
+    ui.global::<Bridge>()
+        .on_request_cam_rtmp_camera_permission(move || {
+            // Fire-and-forget — the OS dialog is async. The actual grant/deny
+            // result comes back via nativeCameraPermissionResult → CameraEvent::PermissionResult.
+            let _ = crate::jni_bridge::camera::upcall_request_camera_permission();
+        });
+
+    ui.global::<Bridge>().on_start_camera_rtmp_preview({
+        let ui_weak = ui.as_weak();
+        move || {
+            let Some(u) = ui_weak.upgrade() else { return };
+            let b = u.global::<Bridge>();
+            if !b.get_cam_rtmp_camera_permission() {
+                return;
+            }
+            let (width, height) = match b.get_cam_rtmp_resolution_idx() {
+                0 => (854, 480),
+                1 => (1280, 720),
+                3 => (3840, 2160),
+                _ => (1920, 1080),
+            };
+            let fps = match b.get_cam_rtmp_framerate_idx() {
+                0 => 24,
+                2 => 60,
+                _ => 30,
+            };
+            if let Err(err) = upcall_start_camera_preview(
+                b.get_cam_rtmp_camera_idx() as u32,
+                width,
+                height,
+                fps,
+                b.get_cam_rtmp_mirror(),
+                b.get_cam_rtmp_stabilization(),
+                b.get_cam_rtmp_zoom(),
+            ) {
+                warn!("startCameraPreview failed: {err}");
+            }
+        }
     });
 
-    let req_perm_ui_weak = ui.as_weak();
-    ui.global::<Bridge>().on_request_cam_rtmp_camera_permission(move || {
-        let _ = crate::jni_bridge::camera::upcall_request_camera_permission();
-        let granted = crate::jni_bridge::camera::upcall_probe_camera_permission().unwrap_or(false);
-        let _ = req_perm_ui_weak.upgrade_in_event_loop(move |u| {
-            u.global::<Bridge>().set_cam_rtmp_camera_permission(granted);
-        });
+    ui.global::<Bridge>().on_stop_camera_rtmp_preview(move || {
+        if let Err(err) = upcall_stop_camera_preview() {
+            warn!("stopCameraPreview failed: {err}");
+        }
     });
 
     ui.global::<Bridge>().on_start_camera_rtmp_stream({
@@ -1441,23 +1681,36 @@ fn android_main(app: PlatformApp) {
             let url_c = url.clone();
             let key_c = key.clone();
             tokio::spawn(async move {
-                let _ = crate::config::update(|c| {
-                    c.camera_rtmp = Some(crate::config::CameraRtmpConfig {
-                        url: url_c,
-                        camera_idx: cam_idx as u32,
-                        resolution_idx: res_idx as u32,
-                        framerate_idx: fps_idx as u32,
-                        mirror,
-                        stabilization: stab,
-                        zoom,
+                let desired = crate::config::CameraRtmpConfig {
+                    url: url_c,
+                    camera_idx: cam_idx as u32,
+                    resolution_idx: res_idx as u32,
+                    framerate_idx: fps_idx as u32,
+                    mirror,
+                    stabilization: stab,
+                    zoom,
+                };
+                // Only touch the config file if something actually changed —
+                // avoids a write on every retry-after-Stop tap.
+                if crate::config::load().camera_rtmp.as_ref() != Some(&desired) {
+                    let _ = crate::config::update(|c| {
+                        c.camera_rtmp = Some(desired);
                     });
-                });
-                let _ = crate::secret::store("cam_rtmp_stream_key", &key_c);
+                }
+                if crate::secret::load("cam_rtmp_stream_key")
+                    .ok()
+                    .flatten()
+                    .as_deref()
+                    != Some(key_c.as_str())
+                {
+                    let _ = crate::secret::store("cam_rtmp_stream_key", &key_c);
+                }
             });
 
             clear_error(&ui);
             let _ = ui.upgrade_in_event_loop(|u| {
-                u.global::<Bridge>().set_cam_rtmp_state(MixerState::Starting);
+                u.global::<Bridge>()
+                    .set_cam_rtmp_state(MixerState::Starting);
             });
 
             let (width, height) = match res_idx {
@@ -1471,12 +1724,27 @@ fn android_main(app: PlatformApp) {
                 2 => 60,
                 _ => 30,
             };
-            let full_url = if key.is_empty() { url } else { format!("{url}/{key}") };
+            let url_base = url.trim_end_matches('/');
+            let full_url = if key.is_empty() {
+                url_base.to_string()
+            } else {
+                format!("{url_base}/{key}")
+            };
 
             let ui_clone = ui.clone();
             match backend {
                 MediaBackendKind::Migration => {
                     tokio::spawn(async move {
+                        // Install runtime handles so CameraSourceNode can access FRAME_PAIR.
+                        // start_graph_runtime is idempotent — safe to call on every Go Live tap.
+                        if let Err(e) = migration_runtime::runtime::start_graph_runtime(
+                            migration_runtime::runtime::RuntimeHandles {
+                                frame_pair: crate::FRAME_PAIR.clone(),
+                            },
+                        ) {
+                            return fail(&ui_clone, format!("start_graph_runtime: {e}"));
+                        }
+
                         // ── Build the GStreamer graph first. It runs idle until frames arrive. ──
                         let commands = vec![
                             Command::CreateCameraSource {
@@ -1566,7 +1834,8 @@ fn android_main(app: PlatformApp) {
                 None => return,
             };
             let _ = ui.upgrade_in_event_loop(|u| {
-                u.global::<Bridge>().set_cam_rtmp_state(MixerState::Stopping);
+                u.global::<Bridge>()
+                    .set_cam_rtmp_state(MixerState::Stopping);
             });
             match backend {
                 MediaBackendKind::Migration => {
@@ -1582,6 +1851,10 @@ fn android_main(app: PlatformApp) {
                 }
                 MediaBackendKind::GstPop => {
                     tokio::spawn(async move {
+                        // Always tear down Migration pipeline too — user may have
+                        // switched backends while a Migration stream was still live.
+                        let _ = upcall_stop_camera_capture();
+                        tear_down_migration();
                         stop_camera_rtmp_via_gstpop(ui).await;
                     });
                 }
@@ -1597,18 +1870,33 @@ fn android_main(app: PlatformApp) {
                 crate::jni_bridge::main_activity::CameraEvent::Started { width, height } => {
                     tracing::info!("camera capture started {width}x{height}");
                     let _ = cam_event_ui_weak.upgrade_in_event_loop(|u| {
-                        u.global::<Bridge>().set_cam_rtmp_state(MixerState::Running);
+                        let b = u.global::<Bridge>();
+                        b.set_cam_rtmp_camera_permission(true);
+                        b.set_cam_rtmp_state(MixerState::Running);
                     });
                 }
                 crate::jni_bridge::main_activity::CameraEvent::Stopped => {
                     tracing::info!("camera capture stopped");
                 }
+                crate::jni_bridge::main_activity::CameraEvent::PermissionResult { granted } => {
+                    tracing::info!("camera permission result: granted={granted}");
+                    let _ = cam_event_ui_weak.upgrade_in_event_loop(move |u| {
+                        let b = u.global::<Bridge>();
+                        b.set_cam_rtmp_camera_permission(granted);
+                        if granted
+                            && u.global::<PanelBridge>().get_active() == Panel::CameraRtmpStream
+                        {
+                            b.invoke_start_camera_rtmp_preview();
+                        }
+                    });
+                }
                 crate::jni_bridge::main_activity::CameraEvent::Failed { reason } => {
                     tracing::warn!("camera capture failed: {reason}");
-                    
-                    let backend = cam_event_ui_weak.upgrade()
+
+                    let backend = cam_event_ui_weak
+                        .upgrade()
                         .map(|u| u.global::<Bridge>().get_media_backend());
-                    
+
                     match backend {
                         Some(MediaBackendKind::Migration) => {
                             tear_down_migration();
@@ -1623,13 +1911,12 @@ fn android_main(app: PlatformApp) {
                         }
                         None => {}
                     }
-                    
+
                     fail(&cam_event_ui_weak, reason.clone());
 
                     if reason == "Camera permission denied" {
-                        let granted = crate::jni_bridge::camera::upcall_probe_camera_permission().unwrap_or(false);
-                        let _ = cam_event_ui_weak.upgrade_in_event_loop(move |u| {
-                            u.global::<Bridge>().set_cam_rtmp_camera_permission(granted);
+                        let _ = cam_event_ui_weak.upgrade_in_event_loop(|u| {
+                            u.global::<Bridge>().set_cam_rtmp_camera_permission(false);
                         });
                     }
                 }

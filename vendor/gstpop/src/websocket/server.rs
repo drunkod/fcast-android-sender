@@ -290,33 +290,28 @@ async fn handle_connection(
                     let _ = tx.try_send(Message::Pong(data));
                 }
             }
-            Ok(Message::Binary(bin)) => {
-                match super::push_buffer_wire::decode(&bin) {
-                    Ok(decoded) => {
-                        let pipeline_id = decoded.pipeline_id.to_string();
-                        let element_name = decoded.element_name.to_string();
-                        let pts_ns = decoded.pts_ns;
-                        let payload = decoded.payload.to_vec();
-                        let manager_clone = Arc::clone(&manager);
-                        tokio::spawn(async move {
-                            if let Err(e) = manager_clone
-                                .push_buffer(&pipeline_id, &element_name, payload, pts_ns)
-                                .await
-                            {
-                                error!("Failed to push buffer from ws binary frame: {}", e);
-                            }
-                        });
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Discarding malformed push_buffer frame ({} bytes) from {}: {:?}",
-                            bin.len(),
-                            addr,
-                            e
-                        );
+            Ok(Message::Binary(bin)) => match super::push_buffer_wire::decode(&bin) {
+                Ok(decoded) => {
+                    let pipeline_id = decoded.pipeline_id.to_string();
+                    let element_name = decoded.element_name.to_string();
+                    let pts_ns = decoded.pts_ns;
+                    let payload = decoded.payload.to_vec();
+                    if let Err(e) = manager
+                        .push_buffer(&pipeline_id, &element_name, payload, pts_ns)
+                        .await
+                    {
+                        error!("Failed to push buffer from ws binary frame: {}", e);
                     }
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Discarding malformed push_buffer frame ({} bytes) from {}: {:?}",
+                        bin.len(),
+                        addr,
+                        e
+                    );
+                }
+            },
             Ok(_) => {}
             Err(e) => {
                 error!("Error receiving message from {}: {}", addr, e);

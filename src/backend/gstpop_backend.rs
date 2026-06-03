@@ -215,9 +215,9 @@ mod tests {
                     let id = req["id"].as_str().unwrap().to_owned();
                     let method = req["method"].as_str().unwrap_or("");
                     let result = match method {
-                        "get_version"        => json!({ "version": "0.4.3" }),
+                        "get_version" => json!({ "version": "0.4.3" }),
                         "get_pipeline_count" => json!({ "count": 2 }),
-                        _                    => json!({}),
+                        _ => json!({}),
                     };
                     let reply = json!({ "id": id, "result": result });
                     let _ = ws.send(Message::Text(reply.to_string().into())).await;

@@ -24,7 +24,9 @@ mod android {
             .context("getClassLoader")?
             .l()
             .context("getClassLoader result")?;
-        let jname = env.new_string(class_name).context("new_string class name")?;
+        let jname = env
+            .new_string(class_name)
+            .context("new_string class name")?;
         let class = env
             .call_method(
                 &loader,
@@ -50,7 +52,10 @@ pub fn request_service_start() -> anyhow::Result<()> {
     use jni::objects::JValue;
 
     let ctx = crate::android_context().context("android_context")?;
-    let mut env = ctx.vm.attach_current_thread().context("attach_current_thread")?;
+    let mut env = ctx
+        .vm
+        .attach_current_thread()
+        .context("attach_current_thread")?;
     let jconfig = env.new_string("{}").context("new_string(config)")?;
     let bridge = android::load_app_class(
         &mut env,
@@ -80,7 +85,10 @@ pub fn request_service_stop() {
 
     if let Ok(ctx) = crate::android_context() {
         let _ = (|| -> anyhow::Result<()> {
-            let mut env = ctx.vm.attach_current_thread().context("attach_current_thread")?;
+            let mut env = ctx
+                .vm
+                .attach_current_thread()
+                .context("attach_current_thread")?;
             let bridge = android::load_app_class(
                 &mut env,
                 &ctx.activity,
@@ -107,7 +115,10 @@ pub fn query_status() -> anyhow::Result<String> {
     use anyhow::Context;
 
     let ctx = crate::android_context().context("android_context")?;
-    let mut env = ctx.vm.attach_current_thread().context("attach_current_thread")?;
+    let mut env = ctx
+        .vm
+        .attach_current_thread()
+        .context("attach_current_thread")?;
     let bridge = android::load_app_class(
         &mut env,
         &ctx.activity,

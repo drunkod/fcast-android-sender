@@ -1,3 +1,7 @@
+// Uses deprecated `backend::current` / `backend::install` shims pending the
+// refactor-step-05 migration to `crate::app::app().registry()` (see super::*).
+#![allow(deprecated)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -129,8 +133,7 @@ impl BackendLifecycle {
         // ── 1Hz daemon status poller ──────────────────────────────────────────
         let poll_weak = ui.as_weak();
         tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(std::time::Duration::from_millis(1000));
+            let mut ticker = tokio::time::interval(std::time::Duration::from_millis(1000));
             loop {
                 ticker.tick().await;
                 let status = gstpop_runtime::embedded_status();
@@ -143,7 +146,8 @@ impl BackendLifecycle {
                 let externally = status.externally_owned;
                 let _ = poll_weak.upgrade_in_event_loop(move |ui| {
                     let b = ui.global::<crate::Bridge>();
-                    if ui.global::<crate::PanelBridge>().get_active() != crate::Panel::MediaBackend {
+                    if ui.global::<crate::PanelBridge>().get_active() != crate::Panel::MediaBackend
+                    {
                         return;
                     }
                     b.set_gstpop_service_state(state_str.into());
@@ -155,8 +159,7 @@ impl BackendLifecycle {
         // ── Migration runtime: 1Hz status poller ──────────────────────────────────
         let poll_mig_weak = ui.as_weak();
         tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(std::time::Duration::from_millis(1000));
+            let mut ticker = tokio::time::interval(std::time::Duration::from_millis(1000));
             loop {
                 ticker.tick().await;
                 let state_str: &'static str = match crate::migration_service::query_status() {
@@ -173,7 +176,8 @@ impl BackendLifecycle {
                 };
                 let _ = poll_mig_weak.upgrade_in_event_loop(move |ui| {
                     let b = ui.global::<crate::Bridge>();
-                    if ui.global::<crate::PanelBridge>().get_active() != crate::Panel::MediaBackend {
+                    if ui.global::<crate::PanelBridge>().get_active() != crate::Panel::MediaBackend
+                    {
                         return;
                     }
                     b.set_migration_runtime_service_state(state_str.into());
@@ -181,10 +185,15 @@ impl BackendLifecycle {
                     // active backend — poller is the single source of truth.
                     if b.get_media_backend() == crate::MediaBackendKind::Migration {
                         let (mbs, text): (crate::MediaBackendState, &str) = match state_str {
-                            "running"  => (crate::MediaBackendState::Ready,        "Migration runtime running"),
-                            "starting" => (crate::MediaBackendState::Starting,     ""),
-                            "error"    => (crate::MediaBackendState::Error,        ""),
-                            _          => (crate::MediaBackendState::Disconnected, "Migration runtime stopped"),
+                            "running" => {
+                                (crate::MediaBackendState::Ready, "Migration runtime running")
+                            }
+                            "starting" => (crate::MediaBackendState::Starting, ""),
+                            "error" => (crate::MediaBackendState::Error, ""),
+                            _ => (
+                                crate::MediaBackendState::Disconnected,
+                                "Migration runtime stopped",
+                            ),
                         };
                         b.set_media_backend_state(mbs);
                         b.set_media_backend_status_text(text.into());
@@ -411,12 +420,12 @@ mod tests {
     #[test]
     fn test_switch_media_backend_to_gstpop_integration() {
         crate::app::init(crate::app::App::production());
+        use futures_util::{SinkExt, StreamExt};
+        use serde_json::{json, Value};
         use std::sync::Mutex as StdMutex;
         use tokio::net::TcpListener;
         use tokio_tungstenite::accept_hdr_async;
         use tokio_tungstenite::tungstenite::Message;
-        use futures_util::{SinkExt, StreamExt};
-        use serde_json::{json, Value};
 
         // Create a multi-threaded tokio runtime for background tasks
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -429,7 +438,9 @@ mod tests {
         i_slint_backend_testing::init_integration_test_with_mock_time();
 
         // 2. Start mock WebSocket server on an ephemeral port
-        let listener = rt.block_on(async { TcpListener::bind("127.0.0.1:0").await }).unwrap();
+        let listener = rt
+            .block_on(async { TcpListener::bind("127.0.0.1:0").await })
+            .unwrap();
         let port = listener.local_addr().unwrap().port();
         let mock_url = format!("ws://127.0.0.1:{port}");
 
@@ -497,7 +508,10 @@ mod tests {
             }
 
             // 7. Verify the bridge is initially connected/ready as Migration
-            assert_eq!(bridge.get_media_backend(), crate::MediaBackendKind::Migration);
+            assert_eq!(
+                bridge.get_media_backend(),
+                crate::MediaBackendKind::Migration
+            );
 
             // 8. Simulate UI page switching to gst-pop and entering configuration
             bridge.set_media_backend(crate::MediaBackendKind::GstPop);
@@ -524,13 +538,17 @@ mod tests {
                 bridge.get_media_backend_status_text().as_str(),
                 "gst-pop v1.2.3 - 2 pipeline(s)"
             );
-            assert!(*auth_ok_check.lock().unwrap(), "Authorization header was missing or incorrect");
+            assert!(
+                *auth_ok_check.lock().unwrap(),
+                "Authorization header was missing or incorrect"
+            );
 
             // 11. Clean up
             let _ = current().shutdown().await;
 
             slint::quit_event_loop().unwrap();
-        }).unwrap();
+        })
+        .unwrap();
 
         slint::run_event_loop().unwrap();
     }

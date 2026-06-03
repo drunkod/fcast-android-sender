@@ -128,7 +128,11 @@ pub fn service_found<'local>(
 }
 
 #[cfg(target_os = "android")]
-pub fn service_lost<'local>(mut env: JNIEnv<'local>, _class: JClass<'local>, name: JString<'local>) {
+pub fn service_lost<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    name: JString<'local>,
+) {
     match jstring_to_string(&mut env, &name) {
         Ok(name) => {
             if let Err(err) = crate::GLOB_EVENT_CHAN.0.send(Event::DeviceRemoved(name)) {

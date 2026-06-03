@@ -29,34 +29,36 @@ pub trait BackendRegistry: Send + Sync {
 
 /// Simple in-memory implementation backed by parking_lot::RwLock.
 pub struct InMemoryRegistry {
-    gstpop:    RwLock<Option<Arc<dyn MediaBackend>>>,
+    gstpop: RwLock<Option<Arc<dyn MediaBackend>>>,
     migration: RwLock<Option<Arc<dyn MediaBackend>>>,
 }
 
 impl InMemoryRegistry {
     pub fn new() -> Self {
         Self {
-            gstpop:    RwLock::new(None),
+            gstpop: RwLock::new(None),
             migration: RwLock::new(None),
         }
     }
 }
 
 impl Default for InMemoryRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl BackendRegistry for InMemoryRegistry {
     fn install(&self, kind: BackendKind, backend: Arc<dyn MediaBackend>) {
         match kind {
-            BackendKind::Gstpop    => *self.gstpop.write()    = Some(backend),
+            BackendKind::Gstpop => *self.gstpop.write() = Some(backend),
             BackendKind::Migration => *self.migration.write() = Some(backend),
         }
     }
 
     fn get(&self, kind: BackendKind) -> Option<Arc<dyn MediaBackend>> {
         match kind {
-            BackendKind::Gstpop    => self.gstpop.read().clone(),
+            BackendKind::Gstpop => self.gstpop.read().clone(),
             BackendKind::Migration => self.migration.read().clone(),
         }
     }

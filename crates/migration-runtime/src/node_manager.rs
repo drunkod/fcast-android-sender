@@ -1,6 +1,10 @@
+use crate::FramePair;
 use crate::{
     media_bridge::StreamBridge,
-    nodes::{CameraSourceNode, DestinationNode, MixerNode, ScreenCaptureNode, SourceNode, VideoGeneratorNode},
+    nodes::{
+        CameraSourceNode, DestinationNode, MixerNode, ScreenCaptureNode, SourceNode,
+        VideoGeneratorNode,
+    },
     protocol::{Command, CommandResult, ControlPoint, Info, NodeInfo},
 };
 use chrono::{DateTime, Utc};
@@ -8,7 +12,6 @@ use gst_app::{AppSink, AppSrc};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::FramePair;
 
 #[derive(Debug, Clone)]
 struct LinkRecord {
@@ -16,6 +19,8 @@ struct LinkRecord {
     sink_id: String,
     audio: bool,
     video: bool,
+    #[allow(dead_code)]
+    // captured from Command::Connect for future routing config; not yet consumed.
     config: Option<HashMap<String, Value>>,
 }
 
@@ -55,7 +60,10 @@ impl NodeRecord {
         match self {
             Self::Destination(node) => node.audio_enabled,
             Self::Mixer(node) => node.audio_enabled,
-            Self::Source(_) | Self::ScreenCapture(_) | Self::CameraSource(_) | Self::VideoGenerator(_) => false,
+            Self::Source(_)
+            | Self::ScreenCapture(_)
+            | Self::CameraSource(_)
+            | Self::VideoGenerator(_) => false,
         }
     }
 
@@ -63,7 +71,10 @@ impl NodeRecord {
         match self {
             Self::Destination(node) => node.video_enabled,
             Self::Mixer(node) => node.video_enabled,
-            Self::Source(_) | Self::ScreenCapture(_) | Self::CameraSource(_) | Self::VideoGenerator(_) => false,
+            Self::Source(_)
+            | Self::ScreenCapture(_)
+            | Self::CameraSource(_)
+            | Self::VideoGenerator(_) => false,
         }
     }
 
@@ -176,7 +187,10 @@ impl NodeRecord {
         match self {
             Self::Destination(node) => node.live_audio_appsrc(),
             Self::Mixer(node) => node.live_slot_audio_appsrc(link_id),
-            Self::Source(_) | Self::ScreenCapture(_) | Self::CameraSource(_) | Self::VideoGenerator(_) => None,
+            Self::Source(_)
+            | Self::ScreenCapture(_)
+            | Self::CameraSource(_)
+            | Self::VideoGenerator(_) => None,
         }
     }
 
@@ -184,7 +198,10 @@ impl NodeRecord {
         match self {
             Self::Destination(node) => node.live_video_appsrc(),
             Self::Mixer(node) => node.live_slot_video_appsrc(link_id),
-            Self::Source(_) | Self::ScreenCapture(_) | Self::CameraSource(_) | Self::VideoGenerator(_) => None,
+            Self::Source(_)
+            | Self::ScreenCapture(_)
+            | Self::CameraSource(_)
+            | Self::VideoGenerator(_) => None,
         }
     }
 }
@@ -1152,7 +1169,12 @@ mod tests {
                 assert!(node.mirror);
                 assert!(!node.stabilization);
                 assert_eq!(node.zoom, 2.5);
-                assert_eq!(node.state, State::Started, "last error: {:?}", node.last_error);
+                assert_eq!(
+                    node.state,
+                    State::Started,
+                    "last error: {:?}",
+                    node.last_error
+                );
             }
             other => panic!("expected NodeRecord::CameraSource, got {other:?}"),
         }

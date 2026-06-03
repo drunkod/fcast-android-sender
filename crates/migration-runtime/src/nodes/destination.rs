@@ -597,7 +597,7 @@ impl DestinationNode {
                         std::iter::once(appsrc.upcast_ref::<gst::Element>())
                             .chain(pre_chain.iter().map(|e| e.upcast_ref::<gst::Element>()))
                             .collect::<Vec<_>>()
-                            .as_slice()
+                            .as_slice(),
                     )
                     .map_err(|err| format!("Failed to link rtmp video preprocessing: {err:?}"))?;
 

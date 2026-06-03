@@ -23,14 +23,14 @@ pub fn native_start<'local>(
 }
 
 #[cfg(target_os = "android")]
-pub fn native_stop<'local>(mut env: JNIEnv<'local>, _class: JClass<'local>) -> jni::sys::jstring {
+pub fn native_stop<'local>(env: JNIEnv<'local>, _class: JClass<'local>) -> jni::sys::jstring {
     let status = crate::HOST_RUNTIME.block_on(async { gstpop_runtime::stop_embedded().await });
     let json = serde_json::to_string(&status).unwrap_or_else(|_| "{}".into());
     env.new_string(json).expect("new_string").into_raw()
 }
 
 #[cfg(target_os = "android")]
-pub fn native_status<'local>(mut env: JNIEnv<'local>, _class: JClass<'local>) -> jni::sys::jstring {
+pub fn native_status<'local>(env: JNIEnv<'local>, _class: JClass<'local>) -> jni::sys::jstring {
     let status = gstpop_runtime::embedded_status();
     let json = serde_json::to_string(&status).unwrap_or_else(|_| "{}".into());
     env.new_string(json).expect("new_string").into_raw()

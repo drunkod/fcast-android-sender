@@ -20,9 +20,9 @@ pub struct CameraRtmpConfig {
 impl Default for CameraRtmpConfig {
     fn default() -> Self {
         Self {
-            url: "".to_owned(),
+            url: "rtmp://10.106.137.137/live/".to_owned(),
             camera_idx: 1,
-            resolution_idx: 2,
+            resolution_idx: 1,
             framerate_idx: 1,
             mirror: false,
             stabilization: true,

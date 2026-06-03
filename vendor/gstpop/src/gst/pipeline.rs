@@ -296,9 +296,17 @@ impl Pipeline {
         gst_state: gst::State,
         state: PipelineState,
     ) -> Result<()> {
-        pipeline
+        let change = pipeline
             .set_state(gst_state)
             .map_err(|e| GstpopError::StateChangeFailed(e.to_string()))?;
+
+        if matches!(change, gst::StateChangeSuccess::Async) {
+            info!(
+                "Pipeline '{}' state change to {} accepted asynchronously",
+                id, state
+            );
+            return Ok(());
+        }
 
         // Wait for state change with timeout
         let timeout = gst::ClockTime::from_seconds(STATE_CHANGE_TIMEOUT_SECS);
