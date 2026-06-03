@@ -1337,20 +1337,21 @@ fn android_main(app: PlatformApp) {
         let pipeline_desc = format!(
             "flvmux name=mux streamable=true latency=1000000000 ! rtmp2sink location={url} \
              appsrc name=camera-src is-live=true format=time block=false do-timestamp=true \
-             ! video/x-raw,format=I420,width={w},height={h},framerate={fps}/1 \
+             ! video/x-raw,format=I420,width={w},height={h},framerate=0/1 \
              ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 \
              ! videoconvert \
-             ! x264enc bitrate=2000 speed-preset=ultrafast tune=zerolatency key-int-max={fps} bframes=0 \
+             ! videorate drop-only=false \
+             ! video/x-raw,framerate=30/1 \
+             ! x264enc bitrate=2000 speed-preset=ultrafast tune=zerolatency key-int-max=60 bframes=0 \
              ! h264parse config-interval=-1 \
              ! video/x-h264,stream-format=avc,alignment=au \
              ! queue leaky=downstream max-size-buffers=2 max-size-bytes=0 max-size-time=0 ! mux.video \
-             audiotestsrc wave=silence is-live=true \
+             audiotestsrc wave=silence is-live=true do-timestamp=true \
              ! audio/x-raw,rate=44100,channels=1 \
              ! voaacenc ! queue ! mux.audio",
             url = full_url,
             w = width,
             h = height,
-            fps = fps,
         );
         info!("gstpop rtmp: using sink element = rtmp2sink");
         info!("gstpop rtmp: pipeline = {pipeline_desc}");
