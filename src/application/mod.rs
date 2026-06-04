@@ -405,6 +405,38 @@ impl Application {
             }
             #[cfg(target_os = "android")]
             Event::QrScanResult(result) => {
+                use std::sync::atomic::Ordering;
+                if crate::android_main::RTMP_QR_PENDING.swap(false, Ordering::AcqRel) {
+                    // This scan was triggered by scan-rtmp-qr — parse as RTMP config.
+                    match parse_rtmp_qr(&result) {
+                        Some((url, key)) => {
+                            self.ui_weak.upgrade_in_event_loop(move |ui| {
+                                let b = ui.global::<crate::Bridge>();
+                                b.set_cam_rtmp_url(url.into());
+                                b.set_cam_rtmp_stream_key(key.into());
+                                b.set_rtmp_qr_scanning(false);
+                                // Navigate to the RTMP stream page.
+                                ui.global::<crate::PanelBridge>()
+                                    .invoke_replace(crate::Panel::CameraRtmpStream);
+                                // Auto-start if camera permission is already granted.
+                                if b.get_cam_rtmp_camera_permission()
+                                    && b.invoke_url_looks_valid(b.get_cam_rtmp_url())
+                                {
+                                    b.invoke_save_cam_rtmp_config();
+                                    b.invoke_start_camera_rtmp_stream();
+                                }
+                            })?;
+                        }
+                        None => {
+                            self.ui_weak.upgrade_in_event_loop(|ui| {
+                                ui.global::<crate::Bridge>().set_rtmp_qr_scanning(false);
+                            })?;
+                            error!("QR scan: not a valid RTMP config: {}", result);
+                        }
+                    }
+                    return Ok(ShouldQuit::No);
+                }
+                // Default path: FCast device pairing.
                 match fcast_sender_sdk::device::device_info_from_url(result) {
                     Some(device_info) => {
                         self.connect_with_device_info(device_info)?;
@@ -621,4 +653,48 @@ impl Application {
 
         Ok(())
     }
+}
+
+/// Parse a QR code payload as an RTMP stream configuration.
+///
+/// Supported formats:
+/// - JSON: `{"url":"rtmp://…","key":"live_…"}`  (also accepts "rtmp_url"/"stream_key")
+/// - Full publish URL: `rtmp://server/app/stream_key` — splits on the last `/`
+///
+/// Returns `(rtmp_url, stream_key)` or `None` if the payload is unrecognised.
+#[cfg(target_os = "android")]
+fn parse_rtmp_qr(s: &str) -> Option<(String, String)> {
+    let s = s.trim();
+
+    // JSON format
+    if s.starts_with('{') {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(s) {
+            let url = v["url"]
+                .as_str()
+                .or_else(|| v["rtmp_url"].as_str())?
+                .to_string();
+            let key = v["key"]
+                .as_str()
+                .or_else(|| v["stream_key"].as_str())
+                .unwrap_or("")
+                .to_string();
+            return Some((url, key));
+        }
+    }
+
+    // Plain rtmp(s):// URL — extract trailing stream key after last '/'
+    if s.starts_with("rtmp://") || s.starts_with("rtmps://") {
+        if let Some(slash_pos) = s.rfind('/') {
+            let base = &s[..slash_pos];
+            let key = &s[slash_pos + 1..];
+            // Only split if the base still contains a path segment (not just the host).
+            if !key.is_empty() && base.matches('/').count() >= 2 {
+                return Some((base.to_string(), key.to_string()));
+            }
+        }
+        // Bare RTMP URL with no embedded key — use as-is, empty key.
+        return Some((s.to_string(), String::new()));
+    }
+
+    None
 }

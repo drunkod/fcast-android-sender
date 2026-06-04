@@ -88,41 +88,5 @@ pub(crate) fn default_quick_actions() -> Vec<crate::QuickAction> {
             active: false,
         },
     ];
-    if cfg!(debug_assertions) {
-        actions.extend([
-            crate::QuickAction {
-                kind: crate::QuickActionKind::Custom,
-                macro_id: "".into(),
-                custom_id: "migrated-server".into(),
-                title: "Migrated srv".into(),
-                enabled: true,
-                active: false,
-            },
-            crate::QuickAction {
-                kind: crate::QuickActionKind::Custom,
-                macro_id: "".into(),
-                custom_id: "test-getinfo".into(),
-                title: "GetInfo".into(),
-                enabled: true,
-                active: false,
-            },
-            crate::QuickAction {
-                kind: crate::QuickActionKind::Custom,
-                macro_id: "".into(),
-                custom_id: "test-crossfade".into(),
-                title: "Crossfade".into(),
-                enabled: true,
-                active: false,
-            },
-            crate::QuickAction {
-                kind: crate::QuickActionKind::Custom,
-                macro_id: "".into(),
-                custom_id: "test-smoke".into(),
-                title: "Smoke Graph".into(),
-                enabled: true,
-                active: false,
-            },
-        ]);
-    }
     actions
 }

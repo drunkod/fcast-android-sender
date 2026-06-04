@@ -135,6 +135,7 @@ export enum Panel {
     media-backend,
     test-functionality,
     camera-rtmp-stream,
+    rtmp-wizard,
 }
 
 export struct QuickAction {
@@ -284,8 +285,6 @@ export global Bridge {
     in-out property <float> camera-zoom-level: 1.0;
     in-out property <bool> wifi-aware-enabled: false;
     in-out property <string>   selected-history-id: "";
-    in-out property <bool>     show-debug: false;
-    in-out property <string>   test-status: "";
     in property <[QuickAction]> quick-actions: [];
     callback move-bar-action(int, int);
     callback set-bar-action-enabled(int, bool);
@@ -336,10 +335,6 @@ export global Bridge {
     callback exit-lifecycle();
     callback set-wifi-aware(bool);
 
-    // ── Migration-runtime callbacks (MVP-PHASE-9) ───────────────────────
-    callback start-migration-server(string); // (bind-addr)
-    callback run-migration-test(string); // (test-id: "getinfo" | "crossfade" | "smoke")
-    callback stop-migration-server();
 
     // ── Media backend selector callbacks (MVP-PHASE-12) ────────────────
     callback save-media-backend-settings();
@@ -411,12 +406,6 @@ export global Bridge {
     callback apply-mixer-canvas(int, int, int);
 
     // ── Camera RTMP stream (new page) ─────────────────────────────────
-    in-out property <int>    cam-rtmp-camera-idx:      1;   // 0=Front, 1=Back, 2=External
-    in-out property <int>    cam-rtmp-resolution-idx:  2;   // 0=480p, 1=720p, 2=1080p, 3=4K
-    in-out property <int>    cam-rtmp-framerate-idx:   1;   // 0=24, 1=30, 2=60
-    in-out property <bool>   cam-rtmp-mirror:          false;
-    in-out property <bool>   cam-rtmp-stabilization:   true;
-    in-out property <float>  cam-rtmp-zoom:            1.0;
     in-out property <string> cam-rtmp-url:             "";
     in-out property <string> cam-rtmp-stream-key:      "";
     in property      <MixerState> cam-rtmp-state:      MixerState.idle;
@@ -426,9 +415,12 @@ export global Bridge {
     callback start-camera-rtmp-stream();
     callback stop-camera-rtmp-stream();
     callback start-camera-rtmp-preview();
-    callback stop-camera-rtmp-preview();
     callback request-cam-rtmp-camera-permission();
+    callback save-cam-rtmp-config();
     pure callback url-looks-valid(string) -> bool;
+    // Stream wizard: scan QR to auto-configure RTMP URL + key then go live.
+    callback scan-rtmp-qr();
+    in-out property <bool> rtmp-qr-scanning: false;
 
     // ── Test functionality (test-functionality panel) ────────────────────
     in-out property <int>    test-camera-idx:           1;

@@ -9,24 +9,35 @@ use super::BackendKind;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct CameraRtmpConfig {
     pub url: String,
-    pub camera_idx: u32,
-    pub resolution_idx: u32,
-    pub framerate_idx: u32,
-    pub mirror: bool,
-    pub stabilization: bool,
-    pub zoom: f32,
 }
 
 impl Default for CameraRtmpConfig {
     fn default() -> Self {
         Self {
             url: "rtmp://10.106.137.137/live/".to_owned(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct GlobalCameraConfig {
+    pub camera_idx: i32,
+    pub resolution_idx: i32,
+    pub framerate_idx: i32,
+    pub mirror_front: bool,
+    pub stabilization: bool,
+    pub zoom_level: f32,
+}
+
+impl Default for GlobalCameraConfig {
+    fn default() -> Self {
+        Self {
             camera_idx: 1,
-            resolution_idx: 1,
+            resolution_idx: 2,
             framerate_idx: 1,
-            mirror: false,
+            mirror_front: false,
             stabilization: true,
-            zoom: 1.0,
+            zoom_level: 1.0,
         }
     }
 }
@@ -42,6 +53,8 @@ pub struct StoredBackendConfig {
     pub gstpop_api_key: Option<String>,
     #[serde(default)]
     pub camera_rtmp: Option<CameraRtmpConfig>,
+    #[serde(default)]
+    pub global_camera: Option<GlobalCameraConfig>,
 }
 
 impl StoredBackendConfig {
@@ -53,6 +66,7 @@ impl StoredBackendConfig {
             gstpop_pipeline_id: "0".into(),
             gstpop_api_key: None,
             camera_rtmp: None,
+            global_camera: None,
         }
     }
 

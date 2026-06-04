@@ -184,9 +184,9 @@ impl DestinationNode {
         let destination_id = id.to_string();
         std::thread::spawn(move || {
             let mut count: u32 = 0;
-            while active_for_thread.load(Ordering::Relaxed) {
+            while active_for_thread.load(Ordering::SeqCst) {
                 std::thread::sleep(std::time::Duration::from_secs(2));
-                if !active_for_thread.load(Ordering::Relaxed) {
+                if !active_for_thread.load(Ordering::SeqCst) {
                     break;
                 }
                 count = count.wrapping_add(1);
@@ -593,7 +593,8 @@ impl DestinationNode {
             None
         };
 
-        let audio_appsrc = if self.audio_enabled {
+        // RTMP always uses an embedded mic/silence source; external audio is not mixed in.
+        let audio_appsrc = if self.audio_enabled && !matches!(self.family, DestinationFamily::Rtmp { .. }) {
             let appsrc = Self::make_appsrc(&self.id, "audio")?;
             pipeline
                 .add(appsrc.upcast_ref::<gst::Element>())
@@ -1084,7 +1085,7 @@ impl DestinationNode {
     fn teardown_live_pipeline(&mut self) {
         if let Some(live) = self.live_pipeline.take() {
             if let Some(active) = live.keyframe_ticker_active.as_ref() {
-                active.store(false, Ordering::Relaxed);
+                active.store(false, Ordering::SeqCst);
             }
             let _ = live.pipeline.set_state(gst::State::Null);
         }

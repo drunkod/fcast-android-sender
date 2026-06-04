@@ -9,12 +9,6 @@ use tracing::{debug, error, info, warn};
 
 use crate::application::defaults::{default_presets, default_quick_actions};
 use crate::application::Application;
-use crate::command::http_runner::start_migrated_command_server;
-use crate::command::legacy_tests::migration_test_log_name;
-use crate::command::legacy_tests::{
-    log_ui_test_status, run_graph_smoke_test, run_legacy_http_crossfade_test,
-    run_legacy_http_getinfo_test,
-};
 use crate::jni_bridge::helpers::{
     cache_app_class_loader, call_java_method_no_args, handle_back_request, init_vm,
     resolve_android_files_dir, JavaMethod,
@@ -23,11 +17,14 @@ use crate::platform::panel_stack::PanelStack;
 use crate::platform::platform_app::{spawn_recording_ticker, PlatformApp, RecordingTickerState};
 use crate::*;
 
-const LEGACY_COMMAND_BIND_ADDR: &str = "0.0.0.0:8080";
 
 use gstpop_runtime::GstPopClient;
 use once_cell::sync::Lazy;
 use std::sync::atomic::AtomicBool;
+
+/// Set to true when `scan-rtmp-qr` is called so the next QrScanResult
+/// is routed to RTMP auto-configuration rather than FCast device pairing.
+pub(crate) static RTMP_QR_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// Embedded gst-pop daemon WebSocket port for the camera RTMP path.
 const CAM_RTMP_GSTPOP_PORT: u16 = 9000;
@@ -138,8 +135,6 @@ fn android_main(app: PlatformApp) {
         });
     }
 
-    let show_debug = cfg!(debug_assertions);
-    ui.global::<Bridge>().set_show_debug(show_debug);
     ui.global::<Bridge>()
         .set_app_version(env!("CARGO_PKG_VERSION").into());
 
@@ -484,22 +479,66 @@ fn android_main(app: PlatformApp) {
         std::sync::Arc::new(backend::lifecycle::BackendLifecycle::new(files_dir));
     backend_lifecycle.register(&ui);
 
-    // Hydrate the Bridge from saved CameraRtmpConfig on startup
-    let cfg = crate::config::load().camera_rtmp.unwrap_or_default();
+    // Hydrate the Bridge from saved configuration on startup
+    let backend_cfg = crate::config::load();
+    let rtmp_cfg = backend_cfg.camera_rtmp.unwrap_or_default();
+    let global_cam_cfg = backend_cfg.global_camera.unwrap_or_default();
     let b = ui.global::<Bridge>();
-    b.set_cam_rtmp_url(cfg.url.into());
-    b.set_cam_rtmp_camera_idx(cfg.camera_idx as i32);
-    b.set_cam_rtmp_resolution_idx(cfg.resolution_idx as i32);
-    b.set_cam_rtmp_framerate_idx(cfg.framerate_idx as i32);
-    b.set_cam_rtmp_mirror(cfg.mirror);
-    b.set_cam_rtmp_stabilization(cfg.stabilization);
-    b.set_cam_rtmp_zoom(cfg.zoom.max(0.5));
+    b.set_cam_rtmp_url(rtmp_cfg.url.into());
+    b.set_camera_idx(global_cam_cfg.camera_idx);
+    b.set_resolution_idx(global_cam_cfg.resolution_idx);
+    b.set_framerate_idx(global_cam_cfg.framerate_idx);
+    b.set_camera_mirror_front(global_cam_cfg.mirror_front);
+    b.set_camera_stabilization(global_cam_cfg.stabilization);
+    b.set_camera_zoom_level(global_cam_cfg.zoom_level.max(0.5));
     b.set_cam_rtmp_camera_permission(
         crate::jni_bridge::camera::upcall_probe_camera_permission().unwrap_or(false),
     );
 
     let saved_key = crate::secret::load("cam_rtmp_stream_key").ok().flatten();
     b.set_cam_rtmp_stream_key(saved_key.as_deref().unwrap_or("Byhag83gMx").into());
+
+    ui.global::<Bridge>().on_save_cam_rtmp_config({
+        let ui_weak = ui.as_weak();
+        move || {
+            let Some(ui) = ui_weak.upgrade() else { return };
+            let b = ui.global::<Bridge>();
+            
+            // Save Stream Key securely
+            let key = b.get_cam_rtmp_stream_key().to_string();
+            if let Err(e) = crate::secret::store("cam_rtmp_stream_key", &key) {
+                tracing::error!("Failed to store cam_rtmp_stream_key: {}", e);
+            }
+            
+            // Save standard config (URL + Global Camera Settings)
+            let url = b.get_cam_rtmp_url().to_string();
+            let camera_idx = b.get_camera_idx();
+            let resolution_idx = b.get_resolution_idx();
+            let framerate_idx = b.get_framerate_idx();
+            let mirror_front = b.get_camera_mirror_front();
+            let stabilization = b.get_camera_stabilization();
+            let zoom_level = b.get_camera_zoom_level();
+            
+            if let Err(e) = crate::config::update(|cfg| {
+                let mut rtmp = cfg.camera_rtmp.clone().unwrap_or_default();
+                rtmp.url = url;
+                cfg.camera_rtmp = Some(rtmp);
+                
+                let mut cam = cfg.global_camera.clone().unwrap_or_default();
+                cam.camera_idx = camera_idx;
+                cam.resolution_idx = resolution_idx;
+                cam.framerate_idx = framerate_idx;
+                cam.mirror_front = mirror_front;
+                cam.stabilization = stabilization;
+                cam.zoom_level = zoom_level;
+                cfg.global_camera = Some(cam);
+            }) {
+                tracing::error!("Failed to save global config: {}", e);
+            }
+            
+            tracing::info!("Camera and RTMP settings saved successfully");
+        }
+    });
 
     // ── Phase 8 / Cluster D1 — Backup / reset handlers ──────────────────
     ui.global::<Bridge>().on_export_settings({
@@ -850,8 +889,6 @@ fn android_main(app: PlatformApp) {
             pb.set_stack(stack.as_model());
             if p == Panel::CameraRtmpStream {
                 ui.global::<Bridge>().invoke_start_camera_rtmp_preview();
-            } else {
-                ui.global::<Bridge>().invoke_stop_camera_rtmp_preview();
             }
         }
     });
@@ -867,8 +904,6 @@ fn android_main(app: PlatformApp) {
             pb.set_stack(stack.as_model());
             if next == Panel::CameraRtmpStream {
                 ui.global::<Bridge>().invoke_start_camera_rtmp_preview();
-            } else {
-                ui.global::<Bridge>().invoke_stop_camera_rtmp_preview();
             }
         }
     });
@@ -880,8 +915,6 @@ fn android_main(app: PlatformApp) {
                 ui.global::<PanelBridge>().set_active(p);
                 if p == Panel::CameraRtmpStream {
                     ui.global::<Bridge>().invoke_start_camera_rtmp_preview();
-                } else {
-                    ui.global::<Bridge>().invoke_stop_camera_rtmp_preview();
                 }
             }
         }
@@ -896,7 +929,6 @@ fn android_main(app: PlatformApp) {
             let pb = ui.global::<PanelBridge>();
             pb.set_active(Panel::None);
             pb.set_stack(stack.as_model());
-            ui.global::<Bridge>().invoke_stop_camera_rtmp_preview();
         }
     });
 
@@ -1127,93 +1159,10 @@ fn android_main(app: PlatformApp) {
                 "scan-qr" => {
                     call_java_method_no_args(&app_clone, JavaMethod::ScanQr);
                 }
-                "migrated-server" => {
-                    let _ = ui_weak.upgrade_in_event_loop(|ui| {
-                        ui.global::<Bridge>()
-                            .invoke_start_migration_server(LEGACY_COMMAND_BIND_ADDR.into());
-                    });
-                }
-                "test-getinfo" => {
-                    let _ = ui_weak.upgrade_in_event_loop(|ui| {
-                        ui.global::<Bridge>()
-                            .invoke_run_migration_test("getinfo".into());
-                    });
-                }
-                "test-crossfade" => {
-                    let _ = ui_weak.upgrade_in_event_loop(|ui| {
-                        ui.global::<Bridge>()
-                            .invoke_run_migration_test("crossfade".into());
-                    });
-                }
-                "test-smoke" => {
-                    let _ = ui_weak.upgrade_in_event_loop(|ui| {
-                        ui.global::<Bridge>()
-                            .invoke_run_migration_test("smoke".into());
-                    });
-                }
                 _ => {}
             }
         }
     });
-
-    #[cfg(debug_assertions)]
-    {
-        ui.global::<Bridge>().on_start_migration_server({
-            let ui_weak = ui.as_weak();
-            move |bind_addr| {
-                let status = match start_migrated_command_server(bind_addr.as_str()) {
-                    Ok(message) => format!("PASS {message}"),
-                    Err(err) => format!("FAIL {err}"),
-                };
-                log_ui_test_status("start-migration-server", &status);
-                let _ = ui_weak.upgrade_in_event_loop(move |ui| {
-                    ui.global::<Bridge>().set_test_status(status.into());
-                });
-            }
-        });
-
-        ui.global::<Bridge>().on_run_migration_test({
-            let ui_weak = ui.as_weak();
-            move |test_id| {
-                let test_id = test_id.to_string();
-                let _ = ui_weak.upgrade_in_event_loop({
-                    let test_id = test_id.clone();
-                    move |ui| {
-                        ui.global::<Bridge>().set_test_status(
-                            format!("Running migration test '{test_id}'...").into(),
-                        );
-                    }
-                });
-                let ui_weak_clone = ui_weak.clone();
-                std::thread::spawn(move || {
-                    let status = match test_id.as_str() {
-                        "getinfo" => run_legacy_http_getinfo_test(LEGACY_COMMAND_BIND_ADDR),
-                        "crossfade" => run_legacy_http_crossfade_test(LEGACY_COMMAND_BIND_ADDR),
-                        "smoke" => run_graph_smoke_test(),
-                        other => format!("FAIL unknown migration-test id: {other}"),
-                    };
-                    log_ui_test_status(migration_test_log_name(&test_id), &status);
-                    let _ = ui_weak_clone.upgrade_in_event_loop(move |ui| {
-                        ui.global::<Bridge>().set_test_status(status.into());
-                    });
-                });
-            }
-        });
-
-        ui.global::<Bridge>().on_stop_migration_server({
-            let ui_weak = ui.as_weak();
-            move || {
-                let status = match migration_runtime::runtime::shutdown_graph_runtime() {
-                    Ok(()) => "PASS migration server stopped".to_string(),
-                    Err(err) => format!("FAIL migration server stop: {err}"),
-                };
-                log_ui_test_status("stop-migration-server", &status);
-                let _ = ui_weak.upgrade_in_event_loop(move |ui| {
-                    ui.global::<Bridge>().set_test_status(status.into());
-                });
-            }
-        });
-    }
 
     // ── Test functionality callbacks ─────────────────────────────────────
     ui.global::<Bridge>().on_start_test({
@@ -1616,6 +1565,18 @@ fn android_main(app: PlatformApp) {
             url.starts_with("rtmp://") || url.starts_with("rtmps://")
         });
 
+    ui.global::<Bridge>().on_scan_rtmp_qr({
+        let ui_weak = ui.as_weak();
+        let app_clone = app_clone.clone();
+        move || {
+            RTMP_QR_PENDING.store(true, Ordering::Release);
+            if let Some(u) = ui_weak.upgrade() {
+                u.global::<Bridge>().set_rtmp_qr_scanning(true);
+            }
+            call_java_method_no_args(&app_clone, JavaMethod::ScanQr);
+        }
+    });
+
     ui.global::<Bridge>()
         .on_request_cam_rtmp_camera_permission(move || {
             // Fire-and-forget — the OS dialog is async. The actual grant/deny
@@ -1631,34 +1592,28 @@ fn android_main(app: PlatformApp) {
             if !b.get_cam_rtmp_camera_permission() {
                 return;
             }
-            let (width, height) = match b.get_cam_rtmp_resolution_idx() {
+            let (width, height) = match b.get_resolution_idx() {
                 0 => (854, 480),
                 1 => (1280, 720),
                 3 => (3840, 2160),
                 _ => (1920, 1080),
             };
-            let fps = match b.get_cam_rtmp_framerate_idx() {
+            let fps = match b.get_framerate_idx() {
                 0 => 24,
                 2 => 60,
                 _ => 30,
             };
             if let Err(err) = upcall_start_camera_preview(
-                b.get_cam_rtmp_camera_idx() as u32,
+                b.get_camera_idx() as u32,
                 width,
                 height,
                 fps,
-                b.get_cam_rtmp_mirror(),
-                b.get_cam_rtmp_stabilization(),
-                b.get_cam_rtmp_zoom(),
+                b.get_camera_mirror_front(),
+                b.get_camera_stabilization(),
+                b.get_camera_zoom_level(),
             ) {
                 warn!("startCameraPreview failed: {err}");
             }
-        }
-    });
-
-    ui.global::<Bridge>().on_stop_camera_rtmp_preview(move || {
-        if let Err(err) = upcall_stop_camera_preview() {
-            warn!("stopCameraPreview failed: {err}");
         }
     });
 
@@ -1675,45 +1630,16 @@ fn android_main(app: PlatformApp) {
                             b.get_media_backend(),
                             b.get_cam_rtmp_url().to_string(),
                             b.get_cam_rtmp_stream_key().to_string(),
-                            b.get_cam_rtmp_camera_idx(),
-                            b.get_cam_rtmp_resolution_idx(),
-                            b.get_cam_rtmp_framerate_idx(),
-                            b.get_cam_rtmp_mirror(),
-                            b.get_cam_rtmp_stabilization(),
-                            b.get_cam_rtmp_zoom(),
+                            b.get_camera_idx(),
+                            b.get_resolution_idx(),
+                            b.get_framerate_idx(),
+                            b.get_camera_mirror_front(),
+                            b.get_camera_stabilization(),
+                            b.get_camera_zoom_level(),
                         )
                     }
                     None => return,
                 };
-
-            let url_c = url.clone();
-            let key_c = key.clone();
-            tokio::spawn(async move {
-                let desired = crate::config::CameraRtmpConfig {
-                    url: url_c,
-                    camera_idx: cam_idx as u32,
-                    resolution_idx: res_idx as u32,
-                    framerate_idx: fps_idx as u32,
-                    mirror,
-                    stabilization: stab,
-                    zoom,
-                };
-                // Only touch the config file if something actually changed —
-                // avoids a write on every retry-after-Stop tap.
-                if crate::config::load().camera_rtmp.as_ref() != Some(&desired) {
-                    let _ = crate::config::update(|c| {
-                        c.camera_rtmp = Some(desired);
-                    });
-                }
-                if crate::secret::load("cam_rtmp_stream_key")
-                    .ok()
-                    .flatten()
-                    .as_deref()
-                    != Some(key_c.as_str())
-                {
-                    let _ = crate::secret::store("cam_rtmp_stream_key", &key_c);
-                }
-            });
 
             clear_error(&ui);
             let _ = ui.upgrade_in_event_loop(|u| {

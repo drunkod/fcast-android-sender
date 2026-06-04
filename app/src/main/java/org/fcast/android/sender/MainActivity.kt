@@ -204,10 +204,8 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_CAMERA_PERM) {
             val cameraGranted = checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            val audioGranted = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            val granted = cameraGranted && audioGranted
             cameraCoordinator.onPermissionResult(cameraGranted)
-            nativeCameraPermissionResult(granted)
+            nativeCameraPermissionResult(cameraGranted)
             if (cameraGranted) {
                 startDefaultCameraPreview()
             }
@@ -333,9 +331,6 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
             } else {
                 cameraPreviewView?.visibility = View.INVISIBLE
             }
-            if (controller.uiState.value is UiState.Disconnected) {
-                startDefaultCameraPreview()
-            }
         }
     }
 
@@ -368,7 +363,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         // Slint pixels let the camera show through underneath.
         view.holder.addCallback(object : SurfaceHolder.Callback {
             override fun surfaceCreated(holder: SurfaceHolder) {
-                cameraPreviewSurface?.release()
+                // SurfaceHolder owns this surface; do not release it here.
                 cameraPreviewSurface = holder.surface
                 maybeStartCameraPreview()
             }
@@ -395,7 +390,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
 
     private fun startDefaultCameraPreview() {
         if (cameraPreviewRequested) return
-        startCameraPreview(0, 1920, 1080, 30, false, false, 1.0f) // 0 = back camera
+        startCameraPreview(1, 1920, 1080, 30, false, false, 1.0f) // 1 = back camera (0=front, 1=back)
     }
 
     private fun maybeStartCameraPreview() {
