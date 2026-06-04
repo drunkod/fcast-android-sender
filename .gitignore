@@ -18,3 +18,4 @@ scr/
 # Local GStreamer build artifacts (compiled by gstreamer-android-universal scripts)
 gst-android-build/
 draft/gstpop/
+.slint-viewer-cache/
