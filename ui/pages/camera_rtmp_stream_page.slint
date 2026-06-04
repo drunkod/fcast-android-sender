@@ -1,10 +1,13 @@
-// ui/pages/camera_rtmp_stream_page.slint — Camera live streaming to RTMP server.
+// camera_rtmp_stream_page.slint — Camera live streaming to RTMP server.
 //
-// Design reference:
-//   draft/moblin-ui/Moblin/View/Stream/StreamView.swift                (camera preview)
-//   draft/moblin-ui/.../StreamWizardCustomRtmpSettingsView.swift       (RTMP URL/key)
-//   ui/pages/mixer_page.slint                                          (RTMP card + state)
-//   ui/pages/test_functionality_page.slint                             (camera source rows)
+// Swift UI reference (draft/moblin-ui/):
+//   StreamView.swift                              — camera / stream preview
+//   StreamWizardCustomRtmpSettingsView.swift       — RTMP URL + stream key fields
+//   StreamVideoSettingsView.swift                  — resolution / fps / codec
+//   AudioLevelView.swift + StreamOverlayLeftView   — audio source / mute / gain
+//   ZoomPresetSelctorView.swift + SegmentedPicker  — segmented zoom presets
+//   CameraSettingsControlView.swift                — camera controls
+//   ControlBarPortraitView.swift                   — stream button (Go Live / Stop)
 
 import { LineEdit, ScrollView } from "std-widgets.slint";
 import { Bridge, Panel, MixerState, MediaBackendKind } from "../bridge.slint";
@@ -15,135 +18,298 @@ import {
     SettingsSection,
     SettingsValueRow,
     SettingsToggleRow,
+    SettingsTextRow,
     SettingsSliderRow,
+    RowColors,
 } from "../components/settings_rows.slint";
 import { PanelHeader } from "../components/panel_chrome.slint";
-component StreamStateChip inherits Text {
-    in property <MixerState> state: MixerState.idle;
-    font-size: Theme.font-size-label;
-    vertical-alignment: center;
 
-    states [
-        idle     when root.state == MixerState.idle     : { text: @tr("idle");     color: Theme.text-secondary; }
-        starting when root.state == MixerState.starting : { text: @tr("starting"); color: Theme.text-secondary; }
-        running  when root.state == MixerState.running  : { text: @tr("live");     color: Theme.success;        }
-        stopping when root.state == MixerState.stopping : { text: @tr("stopping"); color: Theme.text-secondary; }
-        error    when root.state == MixerState.error    : { text: @tr("error");    color: Theme.error-fg;       }
-    ]
+// ── StreamStatePill ───────────────────────────────────────────────────────────
+// Mirrors Moblin StreamButton state colors: green = LIVE, amber = starting/stopping,
+// red = error, dark = idle.
+component StreamStatePill inherits Rectangle {
+    in property <MixerState> state: MixerState.idle;
+
+    private property <bool> is-live:  root.state == MixerState.running;
+    private property <bool> is-busy:  root.state == MixerState.starting
+                                   || root.state == MixerState.stopping;
+    private property <bool> is-error: root.state == MixerState.error;
+
+    height: 28px;
+    border-radius: Theme.radius-circle;
+    background: root.is-live  ? #16a34a33
+              : root.is-busy  ? #d9770633
+              : root.is-error ? #dc262633
+              :                 #37415180;
+
+    HorizontalLayout {
+        padding-left: Theme.padding-card;
+        padding-right: Theme.padding-card;
+        spacing: Theme.spacing-tight;
+        alignment: center;
+
+        if root.is-live || root.is-error || root.is-busy: Text {
+            text: "●";
+            color: root.is-live  ? #22c55e
+                 : root.is-error ? #ef4444
+                 :                 #f59e0b;
+            font-size: 6pt;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.is-live                         ? @tr("LIVE")
+                : root.state == MixerState.starting    ? @tr("Starting…")
+                : root.state == MixerState.stopping    ? @tr("Stopping…")
+                : root.is-error                        ? @tr("Error")
+                :                                        @tr("Idle");
+            color: root.is-live  ? #22c55e
+                 : root.is-error ? #ef4444
+                 :                 Theme.text-secondary;
+            font-size: Theme.font-size-label;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
 }
 
+// ── InputRow ──────────────────────────────────────────────────────────────────
+// Label + LineEdit as a settings-card-compatible row (RowColors.normal background).
+component InputRow inherits Rectangle {
+    in property <string> label;
+    in property <string> placeholder: "";
+    in property <bool>   secret: false;
+    in-out property <string> value: "";
+    callback edited(string);
 
-component CameraRtmpDestinationCard inherits Rectangle {
-    callback edited();
-    background: Theme.surface-card;
-    border-radius: Theme.radius-card;
-    min-height: 240px;
-
-    pure function full-uri() -> string {
-        if Bridge.cam-rtmp-stream-key == "" { return Bridge.cam-rtmp-url; }
-        if Bridge.cam-rtmp-url == ""        { return ""; }
-        return Bridge.cam-rtmp-url + "/" + Bridge.cam-rtmp-stream-key;
-    }
+    background: RowColors.normal;
+    min-height: Theme.row-height + 24px;
 
     VerticalLayout {
-        padding: Theme.padding-screen;
-        spacing: Theme.spacing-default;
+        padding-left: Theme.padding-screen;
+        padding-right: Theme.padding-screen;
+        padding-top: Theme.padding-card;
+        padding-bottom: Theme.padding-card;
+        spacing: Theme.spacing-tight;
 
-        HorizontalLayout {
-            spacing: Theme.spacing-default;
-            Text {
-                text: @tr("RTMP destination");
-                color: Theme.text-primary;
-                font-size: Theme.font-size-heading;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
-            StreamStateChip { state: Bridge.cam-rtmp-state; }
-        }
-
-        Text { text: @tr("URL"); color: Theme.text-secondary; font-size: Theme.font-size-label; }
-        LineEdit {
-            placeholder-text: @tr("rtmp://arn03.contribute.live-video.net/app");
-            text <=> Bridge.cam-rtmp-url;
-            edited(text) => { root.edited(); }
-        }
-
-        if Bridge.cam-rtmp-url != "" && !Bridge.url-looks-valid(Bridge.cam-rtmp-url): Text {
-            text: @tr("URL must start with rtmp:// or rtmps://");
-            color: Theme.error-fg;
+        Text {
+            text: root.label;
+            color: Theme.text-secondary;
             font-size: Theme.font-size-label;
         }
-
-        Text { text: @tr("Stream key"); color: Theme.text-secondary; font-size: Theme.font-size-label; }
         LineEdit {
-            input-type: password;
-            placeholder-text: @tr("live_...");
-            text <=> Bridge.cam-rtmp-stream-key;
-            edited(text) => { root.edited(); }
+            input-type: root.secret ? InputType.password : InputType.text;
+            placeholder-text: root.placeholder;
+            text <=> root.value;
+            edited(t) => { root.edited(t); }
+        }
+    }
+}
+
+// ── ZoomPresetBar ─────────────────────────────────────────────────────────────
+// Moblin-style segmented zoom picker (mirrors ZoomPresetView / SegmentedHPicker).
+// 4 hard presets: ×0.5  ×1  ×2  ×3 — highlights the currently active range.
+// Tap sets Bridge.camera-zoom-level and fires changed().
+component ZoomPresetBar inherits Rectangle {
+    callback changed();
+
+    background: RowColors.normal;
+    height: Theme.row-height;
+
+    HorizontalLayout {
+        padding-left: Theme.padding-screen;
+        padding-right: Theme.padding-screen;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: Theme.spacing-default;
+        alignment: center;
+
+        Text {
+            text: @tr("Quick zoom");
+            color: Theme.text-primary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
         }
 
-        Text { text: @tr("Full publish URL"); color: Theme.text-secondary; font-size: Theme.font-size-label; }
+        // Segmented picker — background #000000 at 40% opacity, border gray.
+        // Matches Moblin: pickerBackgroundColor = .black.opacity(0.4), pickerBorderColor = .gray
         Rectangle {
-            background: Theme.surface-bar;
+            height: 36px;
+            width: 200px;
             border-radius: Theme.radius-card;
-            min-height: 40px;
-            Text {
-                text: root.full-uri() == "" ? @tr("(not set)") : root.full-uri();
-                color: Theme.text-primary;
-                font-size: Theme.font-size-label;
-                horizontal-alignment: left;
-                vertical-alignment: center;
-                overflow: elide;
-                x: Theme.padding-card;
-                width: parent.width - Theme.padding-card * 2;
+            background: #00000066;
+            border-width: 1px;
+            border-color: #888888;
+            clip: true;
+
+            HorizontalLayout {
+                spacing: 0;
+
+                // ×0.5
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: Bridge.camera-zoom-level < 0.75 ? #99999966 : transparent;
+                    TouchArea {
+                        clicked => {
+                            Bridge.camera-zoom-level = 0.5;
+                            Bridge.start-camera-rtmp-preview();
+                            root.changed();
+                        }
+                    }
+                    Text {
+                        text: "×0.5";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-size-label;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 1px;
+                    background: #888888;
+                }
+
+                // ×1
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: Bridge.camera-zoom-level >= 0.75 && Bridge.camera-zoom-level < 1.5
+                        ? #99999966 : transparent;
+                    TouchArea {
+                        clicked => {
+                            Bridge.camera-zoom-level = 1.0;
+                            Bridge.start-camera-rtmp-preview();
+                            root.changed();
+                        }
+                    }
+                    Text {
+                        text: "×1";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-size-label;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 1px;
+                    background: #888888;
+                }
+
+                // ×2
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: Bridge.camera-zoom-level >= 1.5 && Bridge.camera-zoom-level < 2.5
+                        ? #99999966 : transparent;
+                    TouchArea {
+                        clicked => {
+                            Bridge.camera-zoom-level = 2.0;
+                            Bridge.start-camera-rtmp-preview();
+                            root.changed();
+                        }
+                    }
+                    Text {
+                        text: "×2";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-size-label;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: 1px;
+                    background: #888888;
+                }
+
+                // ×3
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: Bridge.camera-zoom-level >= 2.5 ? #99999966 : transparent;
+                    TouchArea {
+                        clicked => {
+                            Bridge.camera-zoom-level = 3.0;
+                            Bridge.start-camera-rtmp-preview();
+                            root.changed();
+                        }
+                    }
+                    Text {
+                        text: "×3";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-size-label;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
             }
         }
     }
 }
 
-
+// ── CameraRtmpStreamPage ──────────────────────────────────────────────────────
 export component CameraRtmpStreamPage inherits Rectangle {
     width: 100%;
     height: 100%;
-    background: Theme.surface-primary;
+    background: transparent;
 
-    property <bool> any-edits-pending: false;
+    private property <bool> any-edits-pending: false;
+
+    pure function full-uri() -> string {
+        if (Bridge.cam-rtmp-stream-key == "") { return Bridge.cam-rtmp-url; }
+        if (Bridge.cam-rtmp-url == "")        { return ""; }
+        return Bridge.cam-rtmp-url + "/" + Bridge.cam-rtmp-stream-key;
+    }
 
     forward-focus: panel-scope;
     panel-scope := FocusScope {
         key-pressed(event) => {
-            if event.text == Key.Escape { PanelBridge.pop(); return accept; }
+            if (event.text == Key.Escape) { PanelBridge.pop(); return accept; }
             return reject;
         }
 
         VerticalLayout {
+            // ── Header ────────────────────────────────────────────────────────
             PanelHeader {
                 title: @tr("Camera RTMP Stream");
                 close-clicked => { PanelBridge.pop(); }
             }
 
+            // ── Scrollable body ───────────────────────────────────────────────
             ScrollView {
                 mouse-drag-pan-enabled: true;
                 VerticalLayout {
                     alignment: start;
-                    spacing: Theme.spacing-default;
+                    spacing: Theme.spacing-loose;
                     padding: Theme.padding-screen;
 
+                    // ── Error banner ──────────────────────────────────────────
                     if Bridge.cam-rtmp-error-text != "": Rectangle {
                         background: Theme.error;
                         border-radius: Theme.radius-card;
                         min-height: 40px;
-                        Text {
-                            text: Bridge.cam-rtmp-error-text;
-                            color: Theme.text-primary;
-                            font-size: Theme.font-size-label;
-                            wrap: word-wrap;
-                            x: Theme.padding-card;
-                            width: parent.width - Theme.padding-card * 2;
-                            vertical-alignment: center;
+                        HorizontalLayout {
+                            padding-left: Theme.padding-screen;
+                            padding-right: Theme.padding-screen;
+                            spacing: Theme.spacing-default;
+                            alignment: center;
+                            Text {
+                                text: "⚠";
+                                color: #fca5a5;
+                                font-size: Theme.font-size-icon;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: Bridge.cam-rtmp-error-text;
+                                color: Theme.text-primary;
+                                font-size: Theme.font-size-label;
+                                wrap: word-wrap;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                            }
                         }
                     }
 
+                    // ── Camera permission request ─────────────────────────────
                     if !Bridge.cam-rtmp-camera-permission: Rectangle {
                         background: Theme.surface-card;
                         border-radius: Theme.radius-card;
@@ -153,8 +319,15 @@ export component CameraRtmpStreamPage inherits Rectangle {
                             spacing: Theme.spacing-default;
                             padding: Theme.padding-screen;
                             Text {
+                                text: "📷";
+                                color: #16a34a;
+                                font-size: 24pt;
+                                horizontal-alignment: center;
+                            }
+                            Text {
                                 text: @tr("Camera access is required for streaming.");
                                 color: Theme.text-secondary;
+                                font-size: Theme.font-size-body;
                                 horizontal-alignment: center;
                                 wrap: word-wrap;
                             }
@@ -165,49 +338,76 @@ export component CameraRtmpStreamPage inherits Rectangle {
                         }
                     }
 
+                    // ── Section: CAMERA ───────────────────────────────────────
                     SettingsSection {
-                        title: @tr("CAMERA SOURCE");
+                        title: @tr("CAMERA");
 
                         SettingsValueRow {
+                            icon: "📷";
+                            icon-bg: Theme.icon-bg-neutral;
                             title: @tr("Camera");
                             value: [@tr("Front"), @tr("Back"), @tr("External")]
-                                   [Math.clamp(Bridge.cam-rtmp-camera-idx, 0, 2)];
+                                   [Math.clamp(Bridge.camera-idx, 0, 2)];
                             clicked => {
-                                Bridge.cam-rtmp-camera-idx = Math.mod(Bridge.cam-rtmp-camera-idx + 1, 3);
+                                Bridge.camera-idx = Math.mod(Bridge.camera-idx + 1, 3);
+                                Bridge.start-camera-rtmp-preview();
                                 root.any-edits-pending = true;
                             }
                         }
                         SettingsValueRow {
+                            icon: "📺";
+                            icon-bg: Theme.icon-bg-neutral;
                             title: @tr("Resolution");
-                            value: ["480p","720p","1080p","4K"]
-                                   [Math.clamp(Bridge.cam-rtmp-resolution-idx, 0, 3)];
+                            value: ["480p", "720p", "1080p", "4K"]
+                                   [Math.clamp(Bridge.resolution-idx, 0, 3)];
                             clicked => {
-                                Bridge.cam-rtmp-resolution-idx = Math.mod(Bridge.cam-rtmp-resolution-idx + 1, 4);
+                                Bridge.resolution-idx = Math.mod(Bridge.resolution-idx + 1, 4);
+                                Bridge.start-camera-rtmp-preview();
                                 root.any-edits-pending = true;
                             }
                         }
                         SettingsValueRow {
+                            icon: "⏱";
+                            icon-bg: Theme.icon-bg-neutral;
                             title: @tr("Framerate");
-                            value: ["24 fps","30 fps","60 fps"]
-                                   [Math.clamp(Bridge.cam-rtmp-framerate-idx, 0, 2)];
+                            value: ["24 fps", "30 fps", "60 fps"]
+                                   [Math.clamp(Bridge.framerate-idx, 0, 2)];
                             clicked => {
-                                Bridge.cam-rtmp-framerate-idx = Math.mod(Bridge.cam-rtmp-framerate-idx + 1, 3);
+                                Bridge.framerate-idx = Math.mod(Bridge.framerate-idx + 1, 3);
+                                Bridge.start-camera-rtmp-preview();
                                 root.any-edits-pending = true;
                             }
                         }
                         SettingsToggleRow {
+                            icon: "🎯";
+                            icon-bg: Theme.icon-bg-neutral;
+                            title: @tr("Tap to focus");
+                            checked: Bridge.camera-tap-to-focus;
+                            toggled(checked) => {
+                                Bridge.camera-tap-to-focus = checked;
+                                Bridge.start-camera-rtmp-preview();
+                                root.any-edits-pending = true;
+                            }
+                        }
+                        SettingsToggleRow {
+                            icon: "↔️";
+                            icon-bg: Theme.icon-bg-neutral;
                             title: @tr("Mirror front camera");
-                            checked: Bridge.cam-rtmp-mirror;
+                            checked: Bridge.camera-mirror-front;
                             toggled(checked) => {
-                                Bridge.cam-rtmp-mirror = checked;
+                                Bridge.camera-mirror-front = checked;
+                                Bridge.start-camera-rtmp-preview();
                                 root.any-edits-pending = true;
                             }
                         }
                         SettingsToggleRow {
+                            icon: "⚡";
+                            icon-bg: Theme.icon-bg-neutral;
                             title: @tr("Video stabilization");
-                            checked: Bridge.cam-rtmp-stabilization;
+                            checked: Bridge.camera-stabilization;
                             toggled(checked) => {
-                                Bridge.cam-rtmp-stabilization = checked;
+                                Bridge.camera-stabilization = checked;
+                                Bridge.start-camera-rtmp-preview();
                                 root.any-edits-pending = true;
                             }
                         }
@@ -217,20 +417,164 @@ export component CameraRtmpStreamPage inherits Rectangle {
                             minimum: 0.5;
                             maximum: 5.0;
                             show-fractional: true;
-                            value <=> Bridge.cam-rtmp-zoom;
+                            value <=> Bridge.camera-zoom-level;
+                            changed => {
+                                Bridge.start-camera-rtmp-preview();
+                                root.any-edits-pending = true;
+                            }
+                        }
+                        ZoomPresetBar {
+                            changed => { root.any-edits-pending = true; }
                         }
                     }
 
+                    // ── Section: AUDIO ────────────────────────────────────────
+                    SettingsSection {
+                        title: @tr("AUDIO");
+
+                        SettingsValueRow {
+                            icon: "🎧";
+                            icon-bg: Theme.icon-bg-neutral;
+                            title: @tr("Source");
+                            value: [@tr("Microphone"), @tr("System audio"), @tr("Both")]
+                                   [Math.clamp(Bridge.audio-source-idx, 0, 2)];
+                            clicked => {
+                                Bridge.audio-source-idx = Math.mod(Bridge.audio-source-idx + 1, 3);
+                                root.any-edits-pending = true;
+                            }
+                        }
+                        SettingsToggleRow {
+                            icon: "🔇";
+                            icon-bg: Theme.icon-bg-neutral;
+                            title: @tr("Mute");
+                            checked: Bridge.audio-muted;
+                            toggled(checked) => {
+                                Bridge.audio-muted = checked;
+                                root.any-edits-pending = true;
+                            }
+                        }
+                        SettingsSliderRow {
+                            title: @tr("Input gain");
+                            unit: "%";
+                            minimum: 0;
+                            maximum: 100;
+                            value: Bridge.audio-input-gain * 100;
+                            changed(v) => {
+                                Bridge.audio-input-gain = v / 100;
+                                root.any-edits-pending = true;
+                            }
+                        }
+                        SettingsValueRow {
+                            icon: "📊";
+                            icon-bg: Theme.icon-bg-neutral;
+                            title: @tr("Bitrate");
+                            value: [@tr("64 kbps"), @tr("128 kbps"), @tr("192 kbps"), @tr("256 kbps")]
+                                   [Math.clamp(Bridge.audio-bitrate-idx, 0, 3)];
+                            clicked => {
+                                Bridge.audio-bitrate-idx = Math.mod(Bridge.audio-bitrate-idx + 1, 4);
+                                root.any-edits-pending = true;
+                            }
+                        }
+                    }
+
+                    // ── Section: DESTINATION ──────────────────────────────────
                     SettingsSection {
                         title: @tr("DESTINATION");
-                        CameraRtmpDestinationCard {
-                            edited => { root.any-edits-pending = true; }
+
+                        // Quick-fill via QR scan
+                        Rectangle {
+                            background: Bridge.rtmp-qr-scanning
+                                ? Theme.accent-active.with-alpha(0.2) : RowColors.normal;
+                            height: Theme.row-height;
+                            animate background { duration: 200ms; }
+
+                            HorizontalLayout {
+                                padding-left: Theme.padding-screen;
+                                padding-right: Theme.padding-screen;
+                                spacing: Theme.spacing-default;
+                                alignment: center;
+
+                                if !Bridge.rtmp-qr-scanning: Rectangle {
+                                    width: 28px;
+                                    height: 28px;
+                                    border-radius: Theme.radius-pill;
+                                    background: Theme.accent-active;
+                                    Text {
+                                        text: "⬛";
+                                        color: Theme.text-primary;
+                                        font-size: Theme.font-size-icon;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                Text {
+                                    text: Bridge.rtmp-qr-scanning
+                                        ? @tr("Scanning for QR code…")
+                                        : @tr("Fill from QR code");
+                                    color: Bridge.rtmp-qr-scanning
+                                        ? Theme.accent : Theme.text-primary;
+                                    font-size: Theme.font-size-body;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+
+                                if !Bridge.rtmp-qr-scanning: Text {
+                                    text: "›";
+                                    color: Theme.text-secondary;
+                                    font-size: Theme.font-size-heading;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            TouchArea {
+                                enabled: !Bridge.rtmp-qr-scanning;
+                                clicked => { Bridge.scan-rtmp-qr(); }
+                            }
+                        }
+
+                        InputRow {
+                            label: @tr("RTMP URL");
+                            placeholder: @tr("rtmp://arn03.contribute.live-video.net/app");
+                            value <=> Bridge.cam-rtmp-url;
+                            edited(t) => { root.any-edits-pending = true; }
+                        }
+
+                        if Bridge.cam-rtmp-url != "" && !Bridge.url-looks-valid(Bridge.cam-rtmp-url): Rectangle {
+                            background: RowColors.normal;
+                            height: 32px;
+                            HorizontalLayout {
+                                padding-left: Theme.padding-screen;
+                                alignment: center;
+                                Text {
+                                    text: "⚠ " + @tr("URL must start with rtmp:// or rtmps://");
+                                    color: Theme.error-fg;
+                                    font-size: Theme.font-size-label;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        InputRow {
+                            label: @tr("Stream key");
+                            placeholder: @tr("live_...");
+                            secret: true;
+                            value <=> Bridge.cam-rtmp-stream-key;
+                            edited(t) => { root.any-edits-pending = true; }
+                        }
+
+                        SettingsTextRow {
+                            title: @tr("Publish URL");
+                            subtitle: root.full-uri() == "" ? @tr("(not set)") : root.full-uri();
                         }
                     }
 
+                    // ── Section: BACKEND ──────────────────────────────────────
                     SettingsSection {
                         title: @tr("BACKEND");
                         SettingsValueRow {
+                            icon: "⚡";
+                            icon-bg: Theme.icon-bg-neutral;
                             title: @tr("Media backend");
                             value: Bridge.media-backend == MediaBackendKind.migration
                                 ? @tr("Migration (in-process)")
@@ -239,32 +583,60 @@ export component CameraRtmpStreamPage inherits Rectangle {
                         }
                     }
 
-                    Rectangle { height: 96px; background: transparent; }
+                    if root.any-edits-pending: PrimaryButton {
+                        label: @tr("Save Changes");
+                        clicked => {
+                            Bridge.save-cam-rtmp-config();
+                            root.any-edits-pending = false;
+                        }
+                    }
+
+                    // Spacer so content clears the fixed bottom bar
+                    Rectangle {
+                        height: 96px;
+                        background: transparent;
+                    }
                 }
             }
 
+            // ── Fixed bottom action bar ───────────────────────────────────────
             Rectangle {
-                height: 96px;
+                height: 80px;
                 background: Theme.surface-bar;
+
                 HorizontalLayout {
-                    padding: Theme.padding-screen;
+                    padding-left: Theme.padding-screen;
+                    padding-right: Theme.padding-screen;
+                    padding-top:    (parent.height - 40px) / 2;
+                    padding-bottom: (parent.height - 40px) / 2;
                     spacing: Theme.spacing-default;
-                    StreamStateChip { state: Bridge.cam-rtmp-state; horizontal-stretch: 0; }
+
+                    StreamStatePill {
+                        state: Bridge.cam-rtmp-state;
+                        horizontal-stretch: 0;
+                    }
+
                     Rectangle { horizontal-stretch: 1; }
+
                     PrimaryButton {
                         label: @tr("Go Live");
                         enabled: (Bridge.cam-rtmp-state == MixerState.idle
-                              || Bridge.cam-rtmp-state == MixerState.error)
-                              && Bridge.url-looks-valid(Bridge.cam-rtmp-url)
-                              && Bridge.cam-rtmp-camera-permission;
-                        clicked => { Bridge.start-camera-rtmp-stream(); root.any-edits-pending = false; }
+                               || Bridge.cam-rtmp-state == MixerState.error)
+                               && Bridge.url-looks-valid(Bridge.cam-rtmp-url)
+                               && Bridge.cam-rtmp-camera-permission;
+                        clicked => {
+                            Bridge.save-cam-rtmp-config();
+                            Bridge.start-camera-rtmp-stream();
+                            root.any-edits-pending = false;
+                        }
                         horizontal-stretch: 1;
                     }
+
                     DestructiveButton {
                         label: @tr("Stop");
                         enabled: Bridge.cam-rtmp-state == MixerState.running
-                              || Bridge.cam-rtmp-state == MixerState.stopping
-                              || Bridge.cam-rtmp-state == MixerState.starting;
+                               || Bridge.cam-rtmp-state == MixerState.starting
+                               || Bridge.cam-rtmp-state == MixerState.stopping;
                         clicked => { Bridge.stop-camera-rtmp-stream(); }
                         horizontal-stretch: 1;
                     }

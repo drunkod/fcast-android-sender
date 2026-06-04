@@ -43,14 +43,15 @@ export global Theme {
     // Paired token for the record button — avoids #cc0000 inline.
     out property <color> recording-dot:    #cc0000;
 
-    // ── Typography — font sizes are `length` ─────────────────────────────
-    out property <length> font-size-label:    12px;
-    out property <length> font-size-body:     16px;
-    out property <length> font-size-heading:  20px;
-    // Larger sizes used by overlays — replace inline 48px / 72px.
-    out property <length> font-size-display:  48px;  // lock icon
-    out property <length> font-size-hero:     72px;  // countdown number
-    out property <length> font-size-cell:     20px;  // history cell duration
+    // ── Typography — font sizes in pt (typographic points, 1pt = 4/3 px) ──
+    out property <length> font-size-label:    9pt;
+    out property <length> font-size-body:     12pt;
+    out property <length> font-size-heading:  15pt;
+    out property <length> font-size-icon:     11pt;  // icon badge symbol (was 14px)
+    // Larger sizes used by overlays.
+    out property <length> font-size-display:  36pt;  // lock icon (was 48px)
+    out property <length> font-size-hero:     54pt;  // countdown number (was 72px)
+    out property <length> font-size-cell:     15pt;  // history cell duration (was 20px)
 
     // ── Spacing ───────────────────────────────────────────────────────────
     out property <length> padding-screen:   12px;
@@ -73,6 +74,9 @@ export global Theme {
     out property <length> thumbnail-width:  200px;
     out property <length> qr-square-min:    240px;
     out property <length> qr-square-max:    360px;
+
+    // ── Icon badge backgrounds ────────────────────────────────────────────
+    out property <color> icon-bg-neutral:  #374151;
 
     // ── Debug log level colors ────────────────────────────────────────────
     out property <color> log-trace:   #888888;

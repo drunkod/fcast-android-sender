@@ -1,26 +1,61 @@
-// control_bar.slint — Persistent bottom action bar and quick-action buttons.
+// control_bar.slint — Moblin-style portrait control bar.
+//
+// Layout (mirrors ControlBarPortraitView.swift):
+//   HorizontalLayout:
+//     LEFT  — horizontally-scrollable quick-action circles
+//     RIGHT — fixed column: stream-state button (End / Connect / Cancel)
+//
+// QuickActionButton visual:
+//   56×56 px circle, #000000bb bg, #555555 border, 18px icon + 9px label
+//
+// StreamStateButton visual:
+//   72×40 px pill, color = state-dependent (red when live, blue when idle)
 
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { Bridge, QuickAction, QuickActionKind, Panel } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 
+// ── QuickActionButton ─────────────────────────────────────────────────────────
 export component QuickActionButton inherits Rectangle {
     in property <QuickAction> action;
     callback invoked(QuickAction);
 
-    height: 48px;
-    width: 80px;
-    border-radius: Theme.radius-card;
-    background: root.action.active
-        ? Theme.accent-active
-        : (ta.pressed ? Theme.surface-card.brighter(20%) : Theme.surface-card);
+    pure function action-icon(kind: QuickActionKind) -> string {
+        return kind == QuickActionKind.open-settings      ? "⚙️"
+             : kind == QuickActionKind.open-audio         ? "🎧"
+             : kind == QuickActionKind.open-camera        ? "📷"
+             : kind == QuickActionKind.open-recording     ? "🔴"
+             : kind == QuickActionKind.open-bitrate       ? "📊"
+             : kind == QuickActionKind.open-network       ? "🌐"
+             : kind == QuickActionKind.open-mixer         ? "🎛️"
+             : kind == QuickActionKind.open-debug         ? "⚠️"
+             : kind == QuickActionKind.open-cast-history  ? "📜"
+             : kind == QuickActionKind.open-quick-actions ? "⋯"
+             : kind == QuickActionKind.open-codec-test    ? "🧪"
+             : kind == QuickActionKind.open-pairing       ? "📲"
+             : kind == QuickActionKind.open-media-backend ? "⚡"
+             : kind == QuickActionKind.start-record       ? "🔴"
+             : kind == QuickActionKind.stop-record        ? "⏹️"
+             : kind == QuickActionKind.run-macro          ? "▶️"
+             : kind == QuickActionKind.scan-qr            ? "🔍"
+             : "•";
+    }
+
+    height: 56px;
+    width:  56px;
+
+    border-radius: Theme.radius-circle;
+    background: root.action.active ? Theme.accent-active.with-alpha(0.90)
+              : ta.pressed         ? #ffffff22
+              :                      #000000bb;
+    border-width: 1px;
+    border-color: #555555;
+
     opacity: root.action.enabled ? 1.0 : 0.45;
 
     accessible-role:    button;
-    accessible-label:   root.action.kind == QuickActionKind.run-macro
-        ? @tr("macro-quick-action-a11y", "Run macro: {}", root.action.title)
-        : root.action.title;
+    accessible-label:   root.action.title;
     accessible-enabled: root.action.enabled;
     accessible-checked: root.action.active;
     accessible-action-default => {
