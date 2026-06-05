@@ -30,6 +30,13 @@ npx slintcn@latest add \
 This writes `.slint` files into `ui/slintcn/components/` and a theme into `ui/slintcn/theme/`.
 **Commit these files** — they are vendored, exactly like `ui/components/std/`.
 
+This repository was installed with slintcn `0.35.0` (recorded in `slintcn.lock.json`). The local
+machine did not have `npx` on `PATH`, so the command was run through one-off Node tooling:
+
+```bash
+nix-shell -p nodejs --run 'npx slintcn@latest add button card input label separator switch slider checkbox progress alert scroll-area badge'
+```
+
 ## 1c. Verification gate (do this before any code change)
 
 ```bash
@@ -44,14 +51,14 @@ Fill these in — every later step depends on them:
 
 | Question | Answer |
 |---|---|
-| Theme global name | `____________` |
-| Theme import path  | `____________` |
-| `Switch` callback name (`toggled`? `changed`?) | `____________` |
-| `Switch` has `enabled`? | `____________` |
-| `Slider` callback name | `____________` |
-| `Button` exposes `enabled`? | `____________` |
-| `Input` `edited` arg shape | `____________` |
-| `Card` padding props (`padding-l`/`gap-l`?) | `____________` |
+| Theme global name | `Tokens` for component tokens; `Theme` for mode; `Palette` for raw colors |
+| Theme import path  | `../theme/tokens.slint` from components; app-level import path is `slintcn/theme/tokens.slint` |
+| `Switch` callback name (`toggled`? `changed`?) | `toggled(bool)` |
+| `Switch` has `enabled`? | No. It exposes `disabled: false`. |
+| `Slider` callback name | `changed(float)` |
+| `Button` exposes `enabled`? | No. It exposes `disabled: false`. |
+| `Input` `edited` arg shape | `edited(string)` with current `text`; also exposes `accepted(string)` |
+| `Card` padding props (`padding-l`/`gap-l`?) | Yes. `padding-l` and `gap-l` are read-only outputs; set `card-padding` / `size`. |
 
 ## Notes
 
