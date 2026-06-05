@@ -23,6 +23,18 @@ slintcn files are **vendored** (committed under `ui/slintcn/`), exactly like the
 `ui/components/std/` set. The Slint compiler resolves them through normal relative-path imports.
 There is nothing to generate at build time.
 
+## Step 2 verification
+
+Verified after Step 1:
+
+- `build.rs` still calls `slint_build::compile_with_config("ui/main.slint", config).unwrap();`
+  directly.
+- No `node`, `npx`, `slintcn`, `remove_dir_all("ui/slintcn")`, or generated-file cleanup was added
+  to `build.rs`.
+- The MCP install command remains `npx slintcn@latest add button card input label separator switch
+  slider checkbox progress alert scroll-area badge`; it is a one-time vendoring command, not a
+  build step.
+
 ## What the original research doc proposed (and why it's wrong here)
 
 ```rust
