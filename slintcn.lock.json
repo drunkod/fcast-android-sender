@@ -89,5 +89,17 @@
     "files": {
       "ui/slintcn/components/badge.slint": "0e419a344dd0be07aef151e99ae642d8c97beca174a22c220ab21367bca4e564"
     }
+  },
+  "tabs": {
+    "version": "0.35.0",
+    "files": {
+      "ui/slintcn/components/tabs.slint": "86e6361512f6c68a169e003d3c1a4158b3b338474fc1487f2b22c097c9f61c45"
+    }
+  },
+  "toggle-group": {
+    "version": "0.35.0",
+    "files": {
+      "ui/slintcn/components/toggle-group.slint": "7b9bd10fbcb8f3b5765c7ac630035f7e0a9ce04b8cb8602182111e07d23025cf"
+    }
   }
 }

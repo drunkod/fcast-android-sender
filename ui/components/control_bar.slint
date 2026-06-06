@@ -1,22 +1,22 @@
-// control_bar.slint — Moblin-style portrait control bar.
+// control_bar.slint — Moblin-style portrait control bar, built on slintcn Button.
 //
 // Layout (mirrors ControlBarPortraitView.swift):
 //   HorizontalLayout:
-//     LEFT  — horizontally-scrollable quick-action circles
+//     LEFT  — horizontally-scrollable quick-action icon buttons
 //     RIGHT — fixed column: stream-state button (End / Connect / Cancel)
 //
-// QuickActionButton visual:
-//   56×56 px circle, #000000bb bg, #555555 border, 18px icon + 9px label
-//
-// StreamStateButton visual:
-//   72×40 px pill, color = state-dependent (red when live, blue when idle)
+// Quick actions are icon-only slintcn Buttons (ghost; default when active).
+// The stream-state pill is a slintcn Button whose variant tracks cast state.
 
 import { Theme } from "../theme.slint";
 import { Bridge, QuickAction, QuickActionKind, Panel, AppState } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
+import { Button, ButtonVariant, ButtonSize } from "../slintcn/components/button.slint";
 
 // ── QuickActionButton ─────────────────────────────────────────────────────────
-export component QuickActionButton inherits Rectangle {
+// slintcn Button (icon size). Emoji glyph as the button content; the action
+// title is exposed via accessibility (icon-only toolbar — shadcn idiom).
+export component QuickActionButton inherits Button {
     in property <QuickAction> action;
     callback invoked(QuickAction);
 
@@ -41,17 +41,14 @@ export component QuickActionButton inherits Rectangle {
              : "•";
     }
 
-    height: 56px;
-    width:  56px;
-
-    border-radius: Theme.radius-circle;
-    background: root.action.active ? Theme.accent-active.with-alpha(0.90)
-              : ta.pressed         ? #ffffff22
-              :                      #000000bb;
-    border-width: 1px;
-    border-color: #555555;
-
-    opacity: root.action.enabled ? 1.0 : 0.45;
+    // Button's own label caps the glyph at 14px; hide it and draw a larger
+    // emoji as a child. `secondary` gives a muted chip backing for contrast
+    // over the camera feed; `default` (filled primary) marks the active action.
+    text: "";
+    size: ButtonSize.icon-lg;
+    height: 56px;                       // larger tap target; width follows (square)
+    variant: root.action.active ? ButtonVariant.default : ButtonVariant.secondary;
+    disabled: !root.action.enabled;
 
     accessible-role:    button;
     accessible-label:   root.action.title;
@@ -59,81 +56,47 @@ export component QuickActionButton inherits Rectangle {
     accessible-checked: root.action.active;
     accessible-action-default => { if root.action.enabled { root.invoked(root.action); } }
 
-    ta := TouchArea {
-        enabled: root.action.enabled;
-        clicked => { root.invoked(root.action); }
-    }
+    clicked => { root.invoked(root.action); }
 
-    VerticalLayout {
-        alignment: center;
-        spacing: 2px;
-        Text {
-            text: action-icon(root.action.kind);
-            color: #ffffff;
-            font-size: 18px;
-            horizontal-alignment: center;
-        }
-        Text {
-            text: root.action.title;
-            color: #ffffffcc;
-            font-size: 9px;
-            font-weight: 500;
-            horizontal-alignment: center;
-            overflow: elide;
-        }
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.action-icon(root.action.kind);
+        font-size: 26px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
     }
 }
 
 // ── StreamStateButton ─────────────────────────────────────────────────────────
-// Always-visible right-column button.  Mirrors Moblin's StreamButton.swift:
-//   Casting        → red  pill  "● End"      → stops cast
-//   WaitingForMedia→ red  pill  "Cancel"     → stops cast
-//   Connecting / SelectingSettings → gray pill "…" (disabled)
-//   Disconnected   → blue pill  "Connect"    → opens settings panel
-component StreamStateButton inherits Rectangle {
+// slintcn Button whose variant/text track cast state. Mirrors StreamButton.swift:
+//   Casting        → destructive  "● End"   → stops cast
+//   WaitingForMedia→ destructive  "Cancel"  → stops cast
+//   Connecting / SelectingSettings → disabled "…"
+//   Disconnected   → default      "Connect" → opens settings panel
+component StreamStateButton inherits Button {
     property <bool> is-live:    Bridge.app-state == AppState.Casting;
     property <bool> is-waiting: Bridge.app-state == AppState.WaitingForMedia;
-    property <bool> is-active:  root.is-live || root.is-waiting;
+    property <bool> is-active:  self.is-live || self.is-waiting;
     property <bool> is-busy:    Bridge.app-state == AppState.Connecting
                              || Bridge.app-state == AppState.SelectingSettings;
 
-    height: 40px;
-    width:  72px;
-    border-radius: 10px;
+    text: self.is-live    ? "● " + @tr("End")
+        : self.is-waiting ? @tr("Cancel")
+        : self.is-busy    ? "…"
+        :                   @tr("Connect");
+    variant: self.is-active ? ButtonVariant.destructive : ButtonVariant.default;
+    disabled: self.is-busy;
+    // Match the 56px quick-action buttons for a consistent control-bar row.
+    size: ButtonSize.lg;
+    height: 56px;
 
-    background: root.is-active ? Theme.error.with-alpha(0.92)
-              : root.is-busy   ? #44444466
-              :                  Theme.accent.with-alpha(0.80);
-    border-width: 1px;
-    border-color: root.is-active ? #ffffff55 : #555555;
+    accessible-role:  button;
+    accessible-label: self.text;
 
-    ta := TouchArea {
-        enabled: !root.is-busy;
-        clicked => {
-            if (root.is-active) { Bridge.stop-casting(); }
-            else { PanelBridge.push(Panel.settings); }
-        }
-    }
-
-    HorizontalLayout {
-        alignment: center;
-        spacing: 4px;
-        if root.is-live: Text {
-            text: "●";
-            color: #ff6060;
-            font-size: 10px;
-            vertical-alignment: center;
-        }
-        Text {
-            text: root.is-live    ? @tr("End")
-                : root.is-waiting ? @tr("Cancel")
-                : root.is-busy    ? @tr("…")
-                :                   @tr("Connect");
-            color: #ffffff;
-            font-size: 12px;
-            font-weight: 700;
-            vertical-alignment: center;
-        }
+    clicked => {
+        if (self.is-active) { Bridge.stop-casting(); }
+        else { PanelBridge.push(Panel.settings); }
     }
 }
 
@@ -161,8 +124,6 @@ export component CastControlBar inherits Rectangle {
                     action: action;
                     // stop-cast is handled by StreamStateButton in the right column.
                     visible: action.kind != QuickActionKind.stop-cast;
-                    width:   action.kind != QuickActionKind.stop-cast ? 56px : 0;
-                    height:  action.kind != QuickActionKind.stop-cast ? 56px : 0;
                     invoked(act) => {
                         if (act.kind == QuickActionKind.open-settings)    { PanelBridge.push(Panel.settings);        return; }
                         if (act.kind == QuickActionKind.open-debug)        { PanelBridge.push(Panel.debug);           return; }
@@ -186,7 +147,6 @@ export component CastControlBar inherits Rectangle {
 
         // RIGHT: always-visible stream state button.
         VerticalLayout {
-            width: 72px + Theme.padding-screen + Theme.spacing-default;
             alignment: center;
             padding-left:  Theme.spacing-default;
             padding-right: Theme.padding-screen;

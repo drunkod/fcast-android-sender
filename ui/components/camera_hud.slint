@@ -1,63 +1,17 @@
+// camera_hud.slint — camera overlay bars built on slintcn Tabs (segmented).
+//
+//   Zoom bar:   0.5× 1× 2× 5× 10×   → Tabs (5 segments), index ↔ zoom value
+//   Camera bar: Dual | Front        → Tabs (2 segments), index ↔ camera-idx
+//
+// Single source of truth stays in Bridge (camera-zoom-level, camera-idx); each
+// Tabs reflects it one-way via `current:` and writes back in `changed`.
 import { Bridge } from "../bridge.slint";
-import { Theme } from "../theme.slint";
+import { Tabs, TabItem, TabsVariant } from "../slintcn/components/tabs.slint";
 
-// One cell inside a segmented picker bar.
-component SegCell inherits Rectangle {
-    in property <string> label;
-    in property <bool>   active: false;
-    callback clicked();
-
-    // Cells stretch to fill the bar evenly: 5-way (~50px) for the zoom bar,
-    // 2-way (~126px) for the Dual|Front bar. A fixed width would leave the
-    // 2-cell bar short of the 254px bar width.
-    horizontal-stretch: 1;
-    min-width: 50px;
-    height: 40px;
-    background: transparent;
-
-    // Active-segment highlight — inset gray fill, matches Moblin style.
-    if root.active: Rectangle {
-        x: 2px; y: 2px;
-        width: parent.width - 4px;
-        height: parent.height - 4px;
-        border-radius: 6px;
-        background: #ffffff99;
-    }
-
-    TouchArea { clicked => { root.clicked(); } }
-
-    Text {
-        text: root.label;
-        color: #ffffff;
-        font-size: 13px;
-        font-weight: 600;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-    }
-}
-
-// 1px vertical divider between cells.
-component SegDivider inherits Rectangle {
-    width: 1px;
-    background: #808080;
-}
-
-// Shared segmented-pill container.
-// width must be set by the caller; height is always 40px.
-component SegBar inherits Rectangle {
-    height: 40px;
-    border-radius: 7px;
-    border-width: 1px;
-    border-color: #808080;
-    background: #00000066;
-    clip: true;
-}
-
-// Zoom bar width: 5 cells × 50px + 4 dividers × 1px = 254px.
-// Camera bar uses the same width so both bars align flush right.
+// Bar width matches the old HUD so both bars align flush-right under the preview.
 export global CameraHudMetrics {
-    out property <length> bar-width: 5 * 50px + 4 * 1px;  // 254px
-    out property <length> bar-height: 40px;
+    out property <length> bar-width: 254px;
+    out property <length> bar-height: 36px;            // slintcn Tabs segmented height
     out property <length> spacing: 6px;
     out property <length> total-height: 2 * bar-height + spacing;
 }
@@ -67,65 +21,55 @@ export component CameraHud inherits Rectangle {
     width: CameraHudMetrics.bar-width;
     height: CameraHudMetrics.total-height;
 
-    // ── VStack: zoom bar on top, camera-mode bar below ────────────────────────
+    // ── zoom value ⇄ segment index ────────────────────────────────────────
+    pure function zoom-to-index(z: float) -> int {
+        return Math.abs(z - 0.5)  < 0.05 ? 0
+             : Math.abs(z - 1.0)  < 0.05 ? 1
+             : Math.abs(z - 2.0)  < 0.05 ? 2
+             : Math.abs(z - 5.0)  < 0.05 ? 3
+             : Math.abs(z - 10.0) < 0.05 ? 4
+             :                             1;   // default to 1×
+    }
+    pure function index-to-zoom(i: int) -> float {
+        return i == 0 ? 0.5 : i == 1 ? 1.0 : i == 2 ? 2.0 : i == 3 ? 5.0 : 10.0;
+    }
+
     VerticalLayout {
         spacing: CameraHudMetrics.spacing;
         alignment: start;
 
-        // Zoom presets: 0.5× 1× 2× 5× 10×
-        SegBar {
-            HorizontalLayout {
-                spacing: 0;
-                alignment: stretch;
-                SegCell {
-                    label: "0.5×";
-                    active: Math.abs(Bridge.camera-zoom-level - 0.5) < 0.05;
-                    clicked => { Bridge.camera-zoom-level = 0.5; Bridge.start-camera-rtmp-preview(); Bridge.save-cam-rtmp-config(); }
-                }
-                SegDivider {}
-                SegCell {
-                    label: "1×";
-                    active: Math.abs(Bridge.camera-zoom-level - 1.0) < 0.05;
-                    clicked => { Bridge.camera-zoom-level = 1.0; Bridge.start-camera-rtmp-preview(); Bridge.save-cam-rtmp-config(); }
-                }
-                SegDivider {}
-                SegCell {
-                    label: "2×";
-                    active: Math.abs(Bridge.camera-zoom-level - 2.0) < 0.05;
-                    clicked => { Bridge.camera-zoom-level = 2.0; Bridge.start-camera-rtmp-preview(); Bridge.save-cam-rtmp-config(); }
-                }
-                SegDivider {}
-                SegCell {
-                    label: "5×";
-                    active: Math.abs(Bridge.camera-zoom-level - 5.0) < 0.05;
-                    clicked => { Bridge.camera-zoom-level = 5.0; Bridge.start-camera-rtmp-preview(); Bridge.save-cam-rtmp-config(); }
-                }
-                SegDivider {}
-                SegCell {
-                    label: "10×";
-                    active: Math.abs(Bridge.camera-zoom-level - 10.0) < 0.05;
-                    clicked => { Bridge.camera-zoom-level = 10.0; Bridge.start-camera-rtmp-preview(); Bridge.save-cam-rtmp-config(); }
-                }
+        // Zoom presets.
+        Tabs {
+            width: CameraHudMetrics.bar-width;
+            variant: TabsVariant.default;
+            items: [
+                { label: "0.5×" },
+                { label: "1×" },
+                { label: "2×" },
+                { label: "5×" },
+                { label: "10×" },
+            ];
+            current: root.zoom-to-index(Bridge.camera-zoom-level);
+            changed(i) => {
+                Bridge.camera-zoom-level = root.index-to-zoom(i);
+                Bridge.start-camera-rtmp-preview();
+                Bridge.save-cam-rtmp-config();
             }
         }
 
-        // Camera mode: Dual (back) | Front — same width as zoom bar.
-        SegBar {
-            HorizontalLayout {
-                spacing: 0;
-                alignment: stretch;
-                // Each cell is (254 - 1) / 2 ≈ 126.5px; stretch handles the split.
-                SegCell {
-                    label: "Dual";
-                    active: Bridge.camera-idx == 1;
-                    clicked => { Bridge.camera-idx = 1; Bridge.start-camera-rtmp-preview(); Bridge.save-cam-rtmp-config(); }
-                }
-                SegDivider {}
-                SegCell {
-                    label: "Front";
-                    active: Bridge.camera-idx == 0;
-                    clicked => { Bridge.camera-idx = 0; Bridge.start-camera-rtmp-preview(); Bridge.save-cam-rtmp-config(); }
-                }
+        // Camera mode — Dual (back) | Front.
+        Tabs {
+            width: CameraHudMetrics.bar-width;
+            variant: TabsVariant.default;
+            items: [
+                { label: "Dual" },
+                { label: "Front" },
+            ];
+            current: Bridge.camera-idx == 1 ? 0 : 1;
+            changed(i) => {
+                Bridge.camera-idx = i == 0 ? 1 : 0;
+                Bridge.start-camera-rtmp-preview();
+                Bridge.save-cam-rtmp-config();
             }
         }
     }
