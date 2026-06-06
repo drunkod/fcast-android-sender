@@ -1,29 +1,21 @@
-// settings_rows.slint — Moblin-style settings rows and section card.
-//
-// Visual language (mirrors iOS Settings / Moblin SettingsView Form):
-//   SettingsSection   — rounded card, 1px dividers between rows
-//   SettingsValueRow  — icon badge (28×28 rounded) + title + value + chevron
-//   SettingsToggleRow — icon badge + title + checkbox
-//   SettingsTextRow   — plain info row (no interaction)
-//   SettingsSliderRow — title + value + slider
-//
-// Icon badge: 28×28 px, border-radius 6px, colored bg, 14px white symbol.
-// Row backgrounds are solid (not transparent) so the section's 1px spacing
-// shows through as a visible divider line.
-
+// settings_rows.slint
 import { Theme } from "../theme.slint";
-import { CheckBox, Slider } from "std-widgets.slint";
+import { Switch } from "../slintcn/components/switch.slint";
+import { Slider } from "../slintcn/components/slider.slint";
+import { Label, LabelVariant } from "../slintcn/components/label.slint";
+import {
+    Card,
+    CardVariant,
+    CardPadding,
+} from "../slintcn/components/card.slint";
 
-// ── Row background tokens ─────────────────────────────────────────────────────
-// Used internally; exported so callers can match if needed.
 export global RowColors {
     out property <color> normal:  #1e2535;
     out property <color> pressed: #2a3347;
     out property <color> divider: #3a4154;
 }
 
-// ── SettingsSection ───────────────────────────────────────────────────────────
-// Rounded card whose background shows as 1px divider lines between rows.
+// ── SettingsSection — wrap rows in a slintcn Card ────────────────────────
 export component SettingsSection inherits VerticalLayout {
     in property <string> title: "";
     spacing: 6px;
@@ -31,22 +23,19 @@ export component SettingsSection inherits VerticalLayout {
     alignment: start;
 
     if root.title != "": HorizontalLayout {
-        padding-left:  Theme.padding-screen;
+        padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
         padding-bottom: 2px;
-        Text {
+        Label {
             text: root.title;
-            color: Theme.text-secondary;
-            font-size: Theme.font-size-label;
-            font-weight: 600;
+            variant: LabelVariant.muted;
         }
     }
 
-    Rectangle {
-        border-radius: Theme.radius-card;
-        background: RowColors.divider;
+    Card {
+        variant: CardVariant.solid;
+        card-padding: CardPadding.none;
         clip: true;
-
         VerticalLayout {
             alignment: start;
             spacing: 1px;
@@ -55,33 +44,38 @@ export component SettingsSection inherits VerticalLayout {
     }
 }
 
-// ── SettingsValueRow ──────────────────────────────────────────────────────────
-// NavigationLink-style row with optional colored icon badge.
+// ── SettingsValueRow — Text → Label, structure unchanged ─────────────────
 export component SettingsValueRow inherits Rectangle {
     in property <string> icon: "";
-    in property <color>  icon-bg: Theme.icon-bg-neutral;
+    in property <color> icon-bg: Theme.icon-bg-neutral;
     in property <string> title;
     in property <string> value: "";
-    in property <bool>   enabled: true;
-    in property <bool>   show-chevron: true;
+    in property <bool> enabled: true;
+    in property <bool> show-chevron: true;
     callback clicked();
 
     height: Theme.row-height;
     opacity: root.enabled ? 1.0 : 0.45;
     background: ta.pressed ? RowColors.pressed : RowColors.normal;
 
-    accessible-role:    button;
-    accessible-label:   root.title + (root.value != "" ? ", " + root.value : "");
+    accessible-role: button;
+    accessible-label: root.title + (root.value != "" ? ", " + root.value : "");
     accessible-enabled: root.enabled;
-    accessible-action-default => { if root.enabled { root.clicked(); } }
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
 
     ta := TouchArea {
         enabled: root.enabled;
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
     }
 
     HorizontalLayout {
-        padding-left:  Theme.padding-screen;
+        padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
         spacing: Theme.spacing-default;
         alignment: center;
@@ -91,7 +85,7 @@ export component SettingsValueRow inherits Rectangle {
             height: 28px;
             border-radius: Theme.radius-pill;
             background: root.icon-bg;
-            Text {
+            Text {                              // emoji/symbol badge — plain Text is fine
                 text: root.icon;
                 font-size: Theme.font-size-icon;
                 color: Theme.text-primary;
@@ -99,33 +93,26 @@ export component SettingsValueRow inherits Rectangle {
                 vertical-alignment: center;
             }
         }
-
-        Text {
+        Label {
             text: root.title;
-            color: Theme.text-primary;
-            font-size: Theme.font-size-body;
-            vertical-alignment: center;
             horizontal-stretch: 1;
         }
-        Text {
+
+        if root.value != "": Label {
             text: root.value;
-            color: Theme.text-secondary;
-            font-size: Theme.font-size-body;
-            vertical-alignment: center;
+            variant: LabelVariant.muted;
         }
-        if root.show-chevron: Text {
+        if root.show-chevron: Label {
             text: "›";
-            color: Theme.text-secondary;
-            font-size: Theme.font-size-heading;
-            vertical-alignment: center;
+            variant: LabelVariant.muted;
         }
     }
 }
 
-// ── SettingsToggleRow ─────────────────────────────────────────────────────────
+// ── SettingsToggleRow — CheckBox → Switch ────────────────────────────────
 export component SettingsToggleRow inherits Rectangle {
     in property <string> icon: "";
-    in property <color>  icon-bg: Theme.icon-bg-neutral;
+    in property <color> icon-bg: Theme.icon-bg-neutral;
     in property <string> title;
     in-out property <bool> checked: false;
     in property <bool> enabled: true;
@@ -135,8 +122,8 @@ export component SettingsToggleRow inherits Rectangle {
     opacity: root.enabled ? 1.0 : 0.45;
     background: RowColors.normal;
 
-    accessible-role:    switch;
-    accessible-label:   root.title;
+    accessible-role: switch;
+    accessible-label: root.title;
     accessible-enabled: root.enabled;
     accessible-checked: root.checked;
     accessible-action-default => {
@@ -147,7 +134,7 @@ export component SettingsToggleRow inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left:  Theme.padding-screen;
+        padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
         spacing: Theme.spacing-default;
         alignment: center;
@@ -165,55 +152,50 @@ export component SettingsToggleRow inherits Rectangle {
                 vertical-alignment: center;
             }
         }
-
-        Text {
+        Label {
             text: root.title;
-            color: Theme.text-primary;
-            font-size: Theme.font-size-body;
-            vertical-alignment: center;
             horizontal-stretch: 1;
         }
-        CheckBox {
+
+        Switch {
             checked <=> root.checked;
-            enabled: root.enabled;
-            toggled() => { root.toggled(self.checked); }
+            disabled: !root.enabled;
+            toggled(v) => {
+                root.toggled(v);
+            }
         }
     }
 }
 
-// ── SettingsTextRow ───────────────────────────────────────────────────────────
-// Read-only info row (version numbers, labels).
+// ── SettingsTextRow — Text → Label ───────────────────────────────────────
 export component SettingsTextRow inherits Rectangle {
     in property <string> title;
     in property <string> subtitle: "";
-
     height: root.subtitle == "" ? Theme.row-height : Theme.row-height + Theme.font-size-label + Theme.spacing-default;
     background: RowColors.normal;
 
     VerticalLayout {
-        padding-left:  Theme.padding-screen;
+        padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
         alignment: center;
-        Text {
+        Label {
             text: root.title;
-            color: Theme.text-primary;
-            font-size: Theme.font-size-body;
         }
-        if root.subtitle != "": Text {
+
+        if root.subtitle != "": Label {
             text: root.subtitle;
-            color: Theme.text-secondary;
-            font-size: Theme.font-size-label;
+            variant: LabelVariant.muted;
         }
     }
 }
 
-// ── SettingsSliderRow ─────────────────────────────────────────────────────────
+// ── SettingsSliderRow — std Slider → slintcn Slider ──────────────────────
 export component SettingsSliderRow inherits Rectangle {
     in property <string> title;
     in property <string> unit: "";
-    in property <float>  minimum: 0;
-    in property <float>  maximum: 100;
-    in property <bool>   show-fractional: false;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <bool> show-fractional: false;
     in-out property <float> value: 50;
     callback changed(float);
 
@@ -221,31 +203,28 @@ export component SettingsSliderRow inherits Rectangle {
     background: RowColors.normal;
 
     VerticalLayout {
-        padding-left:  Theme.padding-screen;
+        padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
-        padding-top:   Theme.spacing-tight;
+        padding-top: Theme.spacing-tight;
         HorizontalLayout {
-            Text {
+            Label {
                 text: root.title;
-                color: Theme.text-primary;
-                font-size: Theme.font-size-body;
-                vertical-alignment: center;
                 horizontal-stretch: 1;
             }
-            Text {
-                text: root.show-fractional
-                    ? "\{Math.round(root.value * 10) / 10}\{root.unit}"
-                    : "\{Math.round(root.value)}\{root.unit}";
-                color: Theme.text-secondary;
-                font-size: Theme.font-size-body;
-                vertical-alignment: center;
+
+            Label {
+                text: root.show-fractional ? "\{Math.round(root.value * 10) / 10}\{root.unit}" : "\{Math.round(root.value)}\{root.unit}";
+                variant: LabelVariant.muted;
             }
         }
+
         Slider {
             minimum: root.minimum;
             maximum: root.maximum;
             value <=> root.value;
-            changed(value) => { root.changed(value); }
+            changed(v) => {
+                root.changed(v);
+            }
         }
     }
 }
