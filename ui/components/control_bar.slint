@@ -11,7 +11,6 @@
 // StreamStateButton visual:
 //   72×40 px pill, color = state-dependent (red when live, blue when idle)
 
-import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { Bridge, QuickAction, QuickActionKind, Panel, AppState } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
@@ -147,12 +146,9 @@ export component CastControlBar inherits Rectangle {
         padding-top:    (Theme.control-bar-height - 56px) / 2;
         padding-bottom: (Theme.control-bar-height - 56px) / 2;
 
-        // LEFT: scrollable quick buttons — stop-cast excluded (handled by right column).
-        ScrollView {
+        // LEFT: horizontally scrollable quick buttons — stop-cast excluded (handled by right column).
+        Flickable {
             horizontal-stretch: 1;
-            mouse-drag-pan-enabled: true;
-            vertical-scrollbar-policy:   ScrollBarPolicy.always-off;
-            horizontal-scrollbar-policy: ScrollBarPolicy.as-needed;
             viewport-width:  actions-row.preferred-width;
             viewport-height: actions-row.preferred-height;
 
