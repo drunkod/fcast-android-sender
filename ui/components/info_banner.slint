@@ -24,6 +24,10 @@
 // Slint docs ref:
 //   draft/slint-ui/docs/astro/src/content/docs/guide/language/coding/structs-and-enums.mdx
 
+// Note: message stays plain Text with an explicit white color — the banner sits
+// on fixed severity-colored fills, so its text must stay light regardless of
+// theme mode. slintcn Label would tie the color to Tokens.color-foreground
+// (flips to near-black in light mode) and force a 14px size.
 import { Theme } from "../theme.slint";
 import { Bridge, BannerSeverity } from "../bridge.slint";
 
@@ -31,31 +35,45 @@ export component InfoBanner inherits Rectangle {
     // Defaults follow Bridge — pages may still override these props for
     // page-local banners (see Backup/Reset which has its own pending-action
     // banner).
-    in property <string>          message: Bridge.banner-message;
-    in property <BannerSeverity>  severity: Bridge.banner-severity;
-    in-out property <bool>        shown: Bridge.banner-visible;
+    in property <string> message: Bridge.banner-message;
+    in property <BannerSeverity> severity: Bridge.banner-severity;
+    in-out property <bool> shown: Bridge.banner-visible;
 
     height: root.shown ? 40px : 0px;
     clip: true;
 
-    accessible-role:  text;
+    accessible-role: text;
     accessible-label: root.message;
 
     private property <color> banner-bg: Theme.accent-active.darker(20%);
 
     states [
-        error   when root.severity == BannerSeverity.error   : { banner-bg: Theme.error;                    }
-        warning when root.severity == BannerSeverity.warning : { banner-bg: Theme.warning;                  }
-        success when root.severity == BannerSeverity.success : { banner-bg: Theme.success;                  }
-        info    when root.severity == BannerSeverity.info    : { banner-bg: Theme.accent-active.darker(20%); }
+        error when root.severity == BannerSeverity.error: {
+            banner-bg: Theme.error;
+        }
+        warning when root.severity == BannerSeverity.warning: {
+            banner-bg: Theme.warning;
+        }
+        success when root.severity == BannerSeverity.success: {
+            banner-bg: Theme.success;
+        }
+        info when root.severity == BannerSeverity.info: {
+            banner-bg: Theme.accent-active.darker(20%);
+        }
     ]
 
     background: root.banner-bg;
-    animate height     { duration: 200ms; easing: ease-out;    }
-    animate background { duration: 150ms; easing: ease-in-out; }
+    animate height {
+        duration: 200ms;
+        easing: ease-out;
+    }
+    animate background {
+        duration: 150ms;
+        easing: ease-in-out;
+    }
 
     HorizontalLayout {
-        padding-left:  Theme.padding-screen;
+        padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
         Text {
             text: root.message;
