@@ -34,7 +34,9 @@ export global Theme {
     // need different luminance to stay WCAG-AA legible — a single token
     // cannot serve both because a color readable as a 16px label on
     // surface-overlay is too bright to host white label text on top of it.
-    out property <color> error:            Tokens.color-destructive;
+    // NB: bg-fill role — kept as a dark literal. slintcn's color-destructive is
+    // red-400 (#ff6467), too light to host white text (2.89:1, fails WCAG-AA).
+    out property <color> error:            #c62828;   // bg fill (dark red)
     out property <color> error-fg:         #ef4444;   // fg/text (bright red)
     out property <color> warning:          #ed6c02;   // bg fill (dark amber)
     out property <color> warning-fg:       #ed6c02;   // fg/text (bright orange)
