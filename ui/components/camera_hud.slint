@@ -7,7 +7,11 @@ component SegCell inherits Rectangle {
     in property <bool>   active: false;
     callback clicked();
 
-    width: 50px;
+    // Cells stretch to fill the bar evenly: 5-way (~50px) for the zoom bar,
+    // 2-way (~126px) for the Dual|Front bar. A fixed width would leave the
+    // 2-cell bar short of the 254px bar width.
+    horizontal-stretch: 1;
+    min-width: 50px;
     height: 40px;
     background: transparent;
 
