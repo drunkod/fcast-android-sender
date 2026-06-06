@@ -1,10 +1,13 @@
-import { LineEdit, Switch, ScrollView } from "std-widgets.slint";
+
 import { Bridge, Panel, SrtSource, MixerState } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
 import { PrimaryButton, TextButton, DestructiveButton } from "../components/buttons.slint";
 import { SettingsSection, SettingsSliderRow } from "../components/settings_rows.slint";
 import { PanelHeaderActions } from "../components/panel_chrome.slint";
+import { Input } from "../slintcn/components/input.slint";
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
+import { Switch } from "../slintcn/components/switch.slint";
 
 component MixerStateChip inherits Text {
     in property <MixerState> state: MixerState.idle;
@@ -50,7 +53,7 @@ component SrtSourceRow inherits Rectangle {
             MixerStateChip { state: root.data.state; }
             Switch {
                 checked <=> root.data.enabled;
-                toggled() => { root.edited(); }
+                toggled(_) => { root.edited(); }
             }
         }
 
@@ -59,8 +62,8 @@ component SrtSourceRow inherits Rectangle {
             color: Theme.text-secondary;
             font-size: Theme.font-size-label;
         }
-        LineEdit {
-            placeholder-text: @tr("srt://relay.example:9710?mode=caller");
+        Input {
+            placeholder: @tr("srt://relay.example:9710?mode=caller");
             text <=> root.data.uri;
             edited(text) => { root.edited(); }
         }
@@ -83,8 +86,8 @@ component SrtSourceRow inherits Rectangle {
             color: Theme.text-secondary;
             font-size: Theme.font-size-label;
         }
-        LineEdit {
-            placeholder-text: @tr("publish:my-stream-key");
+        Input {
+            placeholder: @tr("publish:my-stream-key");
             text <=> root.data.stream-id;
             edited(text) => { root.edited(); }
         }
@@ -273,7 +276,7 @@ component RtmpDestinationRow inherits Rectangle {
             }
             Switch {
                 checked <=> Bridge.rtmp-destination.enabled;
-                toggled() => { root.edited(); }
+                toggled(_) => { root.edited(); }
             }
         }
 
@@ -282,8 +285,8 @@ component RtmpDestinationRow inherits Rectangle {
             color: Theme.text-secondary;
             font-size: Theme.font-size-label;
         }
-        LineEdit {
-            placeholder-text: @tr("rtmp://arn03.contribute.live-video.net/app");
+        Input {
+            placeholder: @tr("rtmp://arn03.contribute.live-video.net/app");
             text <=> Bridge.rtmp-destination.uri;
             edited(text) => { root.edited(); }
         }
@@ -293,9 +296,9 @@ component RtmpDestinationRow inherits Rectangle {
             color: Theme.text-secondary;
             font-size: Theme.font-size-label;
         }
-        LineEdit {
-            input-type: password;
-            placeholder-text: @tr("live_...");
+        Input {
+            password: true;
+            placeholder: @tr("live_...");
             text <=> Bridge.rtmp-destination.stream-key;
             edited(text) => { root.edited(); }
         }
@@ -360,9 +363,9 @@ export component MixerPage inherits Rectangle {
             }
         }
 
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        ScrollArea {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
                 alignment: start;
                 spacing: Theme.spacing-default;
                 padding: Theme.padding-screen;

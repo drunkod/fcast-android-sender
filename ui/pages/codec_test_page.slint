@@ -8,8 +8,8 @@
 // Slint docs ref:
 //   draft/slint-ui/docs/astro/src/content/docs/reference/std-widgets/views/scrollview.mdx
 //   draft/slint-ui/docs/astro/src/content/docs/reference/elements/text.mdx
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
 
-import { ScrollView } from "std-widgets.slint";
 import { Bridge, Panel } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
@@ -19,14 +19,7 @@ import { PanelHeader } from "../components/panel_chrome.slint";
 export component CodecTestPage inherits Rectangle {
     // UI-only stub state.
     in-out property <string> mock-log:
-        "[ready]\n"
-        + "Codec     : video/avc (H.264)\n"
-        + "Profile   : Baseline\n"
-        + "Resolution: 1280x720\n"
-        + "Framerate : 30 fps\n"
-        + "Bitrate   : 4 Mbps\n"
-        + "\n"
-        + @tr("Press \"Run encoder test\" to start.");
+        "[ready]\n" + "Codec     : video/avc (H.264)\n" + "Profile   : Baseline\n" + "Resolution: 1280x720\n" + "Framerate : 30 fps\n" + "Bitrate   : 4 Mbps\n" + "\n" + @tr("Press \"Run encoder test\" to start.");
 
     width: 100%;
     height: 100%;
@@ -36,7 +29,9 @@ export component CodecTestPage inherits Rectangle {
         // ── Header ────────────────────────────────────────────────────────
         PanelHeader {
             title: @tr("Codec test");
-            close-clicked => { PanelBridge.pop(); }
+            close-clicked => {
+                PanelBridge.pop();
+            }
         }
 
         // ── Body ──────────────────────────────────────────────────────────
@@ -50,10 +45,10 @@ export component CodecTestPage inherits Rectangle {
                 clicked => { /* placeholder: would launch a Rust MediaCodec smoke test */ }
             }
 
-            ScrollView {
-                mouse-drag-pan-enabled: true;
+            ScrollArea {
+                content-height: log.preferred-height;
                 vertical-stretch: 1;
-                Text {
+                log := Text {
                     text: root.mock-log;
                     color: Theme.text-secondary;
                     font-size: Theme.font-size-label;

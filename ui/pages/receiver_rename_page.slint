@@ -1,6 +1,7 @@
 import { Theme }    from "../theme.slint";
 import { Bridge }   from "../bridge.slint";
-import { LineEdit } from "std-widgets.slint";
+import { Input } from "../slintcn/components/input.slint";
+
 import { PanelBridge } from "../state/panel_bridge.slint";
 
 export component ReceiverRenamePage inherits Rectangle {
@@ -66,9 +67,9 @@ export component ReceiverRenamePage inherits Rectangle {
                 font-size: Theme.font-size-label;
             }
 
-            name-edit := LineEdit {
+            name-edit := Input {
                 text <=> root.draft-name;
-                placeholder-text: @tr("Enter a name");
+                placeholder: @tr("Enter a name");
             }
         }
 

@@ -6,8 +6,9 @@
 //
 // Slint docs ref:
 //   draft/slint-ui/docs/astro/src/content/docs/reference/std-widgets/views/scrollview.mdx
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
 
-import { ScrollView } from "std-widgets.slint";
+
 import { Bridge, Panel, CastHistoryEntry } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
@@ -62,9 +63,9 @@ export component CastHistoryDetailPage inherits Rectangle {
             }
         }
 
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        ScrollArea {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
                 alignment: start;
                 spacing: Theme.spacing-default;
                 padding: Theme.padding-screen;

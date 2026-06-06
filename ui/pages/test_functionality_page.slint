@@ -7,8 +7,11 @@
 //   draft/moblin-ui/.../CameraSettingsView.swift         (camera design ref)
 //   draft/moblin-ui/.../SrtlaServerSettingsView.swift     (SRT design ref)
 //   draft/moblin-ui/.../WidgetImageSettingsView.swift     (overlay design ref)
+import { Input } from "../slintcn/components/input.slint";
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
+import { Switch } from "../slintcn/components/switch.slint";
 
-import { LineEdit, Switch, ScrollView } from "std-widgets.slint";
+
 import { Bridge, Panel, SrtSource, MixerState } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
@@ -70,7 +73,7 @@ component TestSrtSourceCard inherits Rectangle {
             TestStateChip { state: root.data.state; }
             Switch {
                 checked <=> root.data.enabled;
-                toggled() => { root.edited(); }
+                toggled(_) => { root.edited(); }
             }
         }
 
@@ -79,8 +82,8 @@ component TestSrtSourceCard inherits Rectangle {
             color: Theme.text-secondary;
             font-size: Theme.font-size-label;
         }
-        LineEdit {
-            placeholder-text: @tr("srt://relay.example:9710?mode=caller");
+        Input {
+            placeholder: @tr("srt://relay.example:9710?mode=caller");
             text <=> root.data.uri;
             edited(text) => { root.edited(); }
         }
@@ -103,8 +106,8 @@ component TestSrtSourceCard inherits Rectangle {
             color: Theme.text-secondary;
             font-size: Theme.font-size-label;
         }
-        LineEdit {
-            placeholder-text: @tr("publish:my-stream-key");
+        Input {
+            placeholder: @tr("publish:my-stream-key");
             text <=> root.data.stream-id;
             edited(text) => { root.edited(); }
         }
@@ -171,8 +174,8 @@ component ImageOverlayCard inherits Rectangle {
         }
         HorizontalLayout {
             spacing: Theme.spacing-default;
-            LineEdit {
-                placeholder-text: @tr("/sdcard/DCIM/overlay.png");
+            Input {
+                placeholder: @tr("/sdcard/DCIM/overlay.png");
                 text <=> Bridge.test-overlay-image-path;
                 horizontal-stretch: 1;
             }
@@ -273,9 +276,9 @@ export component TestFunctionalityPage inherits Rectangle {
         }
 
         // ── Body (scrollable) ──────────────────────────────────────────
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        ScrollArea {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
                 alignment: start;
                 spacing: Theme.spacing-default;
                 padding: Theme.padding-screen;

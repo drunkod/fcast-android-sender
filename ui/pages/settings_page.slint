@@ -4,7 +4,9 @@
 // SettingsPageView: shown when AppState == SelectingSettings.
 // FullSettingsPage: panel overlay reachable via PanelBridge.push(Panel.settings).
 
-import { VerticalBox, ScrollView, LineEdit, Spinner } from "std-widgets.slint";
+import { Spinner } from "std-widgets.slint";
+import { Input } from "../slintcn/components/input.slint";
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
 import { Utils, VideoResolutionPicker, FrameratePicker } from "../components/mcore/common.slint";
 import { Bridge, Panel, LifecycleMode, MediaBackendKind, AppState } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
@@ -23,7 +25,9 @@ export component SettingsPageView inherits Rectangle {
     property <int> video-resolution-idx: 2;
     property <int> video-framerate-idx: 2;
 
-    VerticalBox {
+    VerticalLayout {
+        padding: 8px;
+        spacing: 8px;
         Text {
             font-size: Theme.font-size-body;
             vertical-alignment: center;
@@ -76,9 +80,9 @@ export component FullSettingsPage inherits Rectangle {
         }
 
         // ── Body (scrollable) ─────────────────────────────────────────────────
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        ScrollArea {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
                 alignment: start;
                 spacing: Theme.spacing-loose;
                 padding: Theme.padding-screen;
@@ -231,8 +235,8 @@ export component FullSettingsPage inherits Rectangle {
                             }
                         }
 
-                        ip-field := LineEdit {
-                            placeholder-text: @tr("Receiver IP address");
+                        ip-field := Input {
+                            placeholder: @tr("Receiver IP address");
                         }
                         PrimaryButton {
                             label: @tr("Connect");
