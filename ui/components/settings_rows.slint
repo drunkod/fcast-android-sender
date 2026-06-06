@@ -1,8 +1,13 @@
-// settings_rows.slint
+// settings_rows.slint — Moblin-style settings rows and section card.
+//
+// slintcn migration (Step 5): SettingsSection uses slintcn Card, SettingsToggleRow
+// uses slintcn Switch, SettingsSliderRow uses slintcn Slider. Text nodes stay as
+// plain Text — slintcn Label embeds its own TouchArea (would steal taps from a
+// row's TouchArea) and hardcodes a single 14px size (would flatten the type
+// hierarchy: section labels, chevrons, subtitles all collapse to one size).
 import { Theme } from "../theme.slint";
 import { Switch } from "../slintcn/components/switch.slint";
 import { Slider } from "../slintcn/components/slider.slint";
-import { Label, LabelVariant } from "../slintcn/components/label.slint";
 import {
     Card,
     CardVariant,
@@ -16,6 +21,7 @@ export global RowColors {
 }
 
 // ── SettingsSection — wrap rows in a slintcn Card ────────────────────────
+// card-padding: none keeps the Card flush so the 1px row spacing shows as a divider.
 export component SettingsSection inherits VerticalLayout {
     in property <string> title: "";
     spacing: 6px;
@@ -26,9 +32,11 @@ export component SettingsSection inherits VerticalLayout {
         padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
         padding-bottom: 2px;
-        Label {
+        Text {
             text: root.title;
-            variant: LabelVariant.muted;
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-label;
+            font-weight: 600;
         }
     }
 
@@ -44,7 +52,7 @@ export component SettingsSection inherits VerticalLayout {
     }
 }
 
-// ── SettingsValueRow — Text → Label, structure unchanged ─────────────────
+// ── SettingsValueRow — NavigationLink-style row with optional icon badge ──
 export component SettingsValueRow inherits Rectangle {
     in property <string> icon: "";
     in property <color> icon-bg: Theme.icon-bg-neutral;
@@ -85,7 +93,7 @@ export component SettingsValueRow inherits Rectangle {
             height: 28px;
             border-radius: Theme.radius-pill;
             background: root.icon-bg;
-            Text {                              // emoji/symbol badge — plain Text is fine
+            Text {
                 text: root.icon;
                 font-size: Theme.font-size-icon;
                 color: Theme.text-primary;
@@ -93,23 +101,29 @@ export component SettingsValueRow inherits Rectangle {
                 vertical-alignment: center;
             }
         }
-        Label {
+        Text {
             text: root.title;
+            color: Theme.text-primary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
             horizontal-stretch: 1;
         }
-
-        if root.value != "": Label {
+        Text {
             text: root.value;
-            variant: LabelVariant.muted;
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
         }
-        if root.show-chevron: Label {
+        if root.show-chevron: Text {
             text: "›";
-            variant: LabelVariant.muted;
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-heading;
+            vertical-alignment: center;
         }
     }
 }
 
-// ── SettingsToggleRow — CheckBox → Switch ────────────────────────────────
+// ── SettingsToggleRow — slintcn Switch ───────────────────────────────────
 export component SettingsToggleRow inherits Rectangle {
     in property <string> icon: "";
     in property <color> icon-bg: Theme.icon-bg-neutral;
@@ -152,11 +166,13 @@ export component SettingsToggleRow inherits Rectangle {
                 vertical-alignment: center;
             }
         }
-        Label {
+        Text {
             text: root.title;
+            color: Theme.text-primary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
             horizontal-stretch: 1;
         }
-
         Switch {
             checked <=> root.checked;
             disabled: !root.enabled;
@@ -167,7 +183,7 @@ export component SettingsToggleRow inherits Rectangle {
     }
 }
 
-// ── SettingsTextRow — Text → Label ───────────────────────────────────────
+// ── SettingsTextRow — read-only info row (version numbers, labels) ────────
 export component SettingsTextRow inherits Rectangle {
     in property <string> title;
     in property <string> subtitle: "";
@@ -178,18 +194,20 @@ export component SettingsTextRow inherits Rectangle {
         padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
         alignment: center;
-        Label {
+        Text {
             text: root.title;
+            color: Theme.text-primary;
+            font-size: Theme.font-size-body;
         }
-
-        if root.subtitle != "": Label {
+        if root.subtitle != "": Text {
             text: root.subtitle;
-            variant: LabelVariant.muted;
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-label;
         }
     }
 }
 
-// ── SettingsSliderRow — std Slider → slintcn Slider ──────────────────────
+// ── SettingsSliderRow — slintcn Slider ───────────────────────────────────
 export component SettingsSliderRow inherits Rectangle {
     in property <string> title;
     in property <string> unit: "";
@@ -207,17 +225,22 @@ export component SettingsSliderRow inherits Rectangle {
         padding-right: Theme.padding-screen;
         padding-top: Theme.spacing-tight;
         HorizontalLayout {
-            Label {
+            Text {
                 text: root.title;
+                color: Theme.text-primary;
+                font-size: Theme.font-size-body;
+                vertical-alignment: center;
                 horizontal-stretch: 1;
             }
-
-            Label {
-                text: root.show-fractional ? "\{Math.round(root.value * 10) / 10}\{root.unit}" : "\{Math.round(root.value)}\{root.unit}";
-                variant: LabelVariant.muted;
+            Text {
+                text: root.show-fractional
+                    ? "\{Math.round(root.value * 10) / 10}\{root.unit}"
+                    : "\{Math.round(root.value)}\{root.unit}";
+                color: Theme.text-secondary;
+                font-size: Theme.font-size-body;
+                vertical-alignment: center;
             }
         }
-
         Slider {
             minimum: root.minimum;
             maximum: root.maximum;
