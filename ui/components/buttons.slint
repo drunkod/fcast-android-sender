@@ -5,13 +5,22 @@ import { Label } from "../slintcn/components/label.slint";
 // Spinner stays from std-widgets — slintcn Progress can't spin.
 import { Spinner } from "std-widgets.slint";
 
+// Note: slintcn Button sets no accessible-* props, so each wrapper re-adds
+// role/label/enabled/action for TalkBack. The 48px height keeps the Material
+// touch-target minimum (slintcn's default size is only 36px).
 export component PrimaryButton inherits Button {
     in property <string> label;           // keep call-site API
     in property <bool> enabled: true;
     text: root.label;
     disabled: !root.enabled;
     variant: ButtonVariant.default;
+    height: Theme.row-height;
     // `clicked` is already on slintcn Button — inherited.
+
+    accessible-role:          button;
+    accessible-label:         root.label;
+    accessible-enabled:       root.enabled;
+    accessible-action-default => { if root.enabled { self.clicked(); } }
 }
 
 export component TextButton inherits Button {
@@ -20,6 +29,12 @@ export component TextButton inherits Button {
     text: root.label;
     disabled: !root.enabled;
     variant: ButtonVariant.ghost;
+    height: Theme.row-height;
+
+    accessible-role:          button;
+    accessible-label:         root.label;
+    accessible-enabled:       root.enabled;
+    accessible-action-default => { if root.enabled { self.clicked(); } }
 }
 
 export component DestructiveButton inherits Button {
@@ -28,6 +43,12 @@ export component DestructiveButton inherits Button {
     text: root.label;
     disabled: !root.enabled;
     variant: ButtonVariant.destructive;
+    height: Theme.row-height;
+
+    accessible-role:          button;
+    accessible-label:         @tr("destructive-button-a11y-label", "{} (destructive)", root.label);
+    accessible-enabled:       root.enabled;
+    accessible-action-default => { if root.enabled { self.clicked(); } }
 }
 
 // LoadingView: keep std Spinner, swap Text → Label.
