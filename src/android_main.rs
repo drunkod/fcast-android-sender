@@ -1198,6 +1198,89 @@ fn android_main(app: PlatformApp) {
         log::info!("pick-test-overlay-image: stub — file picker not yet implemented");
     });
 
+    // ── Codec test callbacks ─────────────────────────────────────────────
+    ui.global::<Bridge>().on_run_codec_test({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_codec_test_running(true);
+                ui.global::<Bridge>()
+                    .set_codec_test_log("Running full codec test…\n".into());
+            });
+            let ui_inner = ui_weak.clone();
+            std::thread::spawn(move || {
+                let mut report = String::new();
+
+                report.push_str("===== FULL CODEC DUMP =====\n");
+                match crate::jni_bridge::codec_test::run_codec_dump_all() {
+                    Ok(r) => report.push_str(&r),
+                    Err(e) => report.push_str(&format!("FAIL dump: {e}\n")),
+                }
+
+                report.push_str("\n===== QUICK FIND =====\n");
+                match crate::jni_bridge::codec_test::run_codec_quick_find() {
+                    Ok(r) => report.push_str(&r),
+                    Err(e) => report.push_str(&format!("FAIL quick-find: {e}\n")),
+                }
+
+                report.push_str("\n===== ENCODER SMOKE TEST =====\n");
+                match crate::jni_bridge::codec_test::run_codec_smoke_test() {
+                    Ok(r) => report.push_str(&r),
+                    Err(e) => report.push_str(&format!("FAIL smoke: {e}\n")),
+                }
+
+                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
+                    ui.global::<Bridge>().set_codec_test_log(report.into());
+                    ui.global::<Bridge>().set_codec_test_running(false);
+                });
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_run_codec_dump_only({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_codec_test_running(true);
+                ui.global::<Bridge>()
+                    .set_codec_test_log("Dumping codecs…\n".into());
+            });
+            let ui_inner = ui_weak.clone();
+            std::thread::spawn(move || {
+                let report = match crate::jni_bridge::codec_test::run_codec_dump_all() {
+                    Ok(r) => r,
+                    Err(e) => format!("FAIL: {e}\n"),
+                };
+                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
+                    ui.global::<Bridge>().set_codec_test_log(report.into());
+                    ui.global::<Bridge>().set_codec_test_running(false);
+                });
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_run_codec_smoke_only({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_codec_test_running(true);
+                ui.global::<Bridge>()
+                    .set_codec_test_log("Running encoder smoke test…\n".into());
+            });
+            let ui_inner = ui_weak.clone();
+            std::thread::spawn(move || {
+                let report = match crate::jni_bridge::codec_test::run_codec_smoke_test() {
+                    Ok(r) => r,
+                    Err(e) => format!("FAIL: {e}\n"),
+                };
+                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
+                    ui.global::<Bridge>().set_codec_test_log(report.into());
+                    ui.global::<Bridge>().set_codec_test_running(false);
+                });
+            });
+        }
+    });
+
     use crate::jni_bridge::camera::{
         upcall_start_camera_capture, upcall_start_camera_preview, upcall_stop_camera_capture,
         upcall_stop_camera_preview,
