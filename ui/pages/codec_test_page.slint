@@ -1,59 +1,103 @@
-// codec_test_page.slint — H.264 encoder smoke-test panel (UI-only placeholder).
+// codec_test_page.slint — MediaCodec probe panel (slintcn).
 //
 // Reachable from FullSettingsPage's "H.264 encoder test" row, which sets
-// `PanelBridge.push(Panel.codec-test)`.  The "Run encoder test" button
-// is a no-op in this phase; Phase 8 wires it to a Rust handler that exercises
-// MediaCodec.
-//
-// Slint docs ref:
-//   draft/slint-ui/docs/astro/src/content/docs/reference/elements/text.mdx
+// `PanelBridge.push(Panel.codec-test)`. Buttons invoke Bridge callbacks wired
+// in src/android_main.rs; the log streams back via Bridge.codec-test-log.
 import { ScrollArea } from "../slintcn/components/scroll-area.slint";
+import { Badge, BadgeVariant } from "../slintcn/components/badge.slint";
+import { Separator } from "../slintcn/components/separator.slint";
 
 import { Bridge, Panel } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
-import { PrimaryButton, TextButton } from "../components/buttons.slint";
+import { PrimaryButton, DestructiveButton } from "../components/buttons.slint";
 import { PanelHeader } from "../components/panel_chrome.slint";
 
 export component CodecTestPage inherits Rectangle {
-    // UI-only stub state.
-    in-out property <string> mock-log:
-        "[ready]\n" + "Codec     : video/avc (H.264)\n" + "Profile   : Baseline\n" + "Resolution: 1280x720\n" + "Framerate : 30 fps\n" + "Bitrate   : 4 Mbps\n" + "\n" + @tr("Press \"Run encoder test\" to start.");
-
     width: 100%;
     height: 100%;
     background: Theme.surface-primary;
 
-    VerticalLayout {
-        // ── Header ────────────────────────────────────────────────────────
-        PanelHeader {
-            title: @tr("Codec test");
-            close-clicked => {
+    forward-focus: panel-scope;
+    panel-scope := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
                 PanelBridge.pop();
+                return accept;
             }
+            return reject;
         }
 
-        // ── Body ──────────────────────────────────────────────────────────
         VerticalLayout {
-            padding: Theme.padding-screen;
-            spacing: Theme.spacing-default;
-
-            PrimaryButton {
-                label: @tr("Run encoder test");
-                // UI-only — no real test runner in this phase.
-                clicked => { /* placeholder: would launch a Rust MediaCodec smoke test */ }
+            // ── Header ─────────────────────────────────────────────────
+            PanelHeader {
+                title: @tr("Codec test");
+                close-clicked => {
+                    PanelBridge.pop();
+                }
             }
 
-            ScrollArea {
-                content-height: log.preferred-height;
-                vertical-stretch: 1;
-                log := Text {
-                    text: root.mock-log;
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-size-label;
-                    wrap: word-wrap;
+            // ── Body ───────────────────────────────────────────────────
+            VerticalLayout {
+                padding: Theme.padding-screen;
+                spacing: Theme.spacing-default;
+
+                // Status chip — running / idle.
+                HorizontalLayout {
+                    spacing: Theme.spacing-default;
+                    alignment: start;
+                    Badge {
+                        text: Bridge.codec-test-running ? @tr("running") : @tr("idle");
+                        variant: Bridge.codec-test-running ? BadgeVariant.default : BadgeVariant.secondary;
+                    }
+                }
+
+                // Primary actions row.
+                HorizontalLayout {
+                    spacing: Theme.spacing-default;
+
+                    PrimaryButton {
+                        label: Bridge.codec-test-running ? @tr("Running…") : @tr("Run full codec test");
+                        enabled: !Bridge.codec-test-running;
+                        clicked => {
+                            Bridge.run-codec-test();
+                        }
+                        horizontal-stretch: 1;
+                    }
+
+                    PrimaryButton {
+                        label: @tr("Dump codecs only");
+                        enabled: !Bridge.codec-test-running;
+                        clicked => {
+                            Bridge.run-codec-dump-only();
+                        }
+                        horizontal-stretch: 1;
+                    }
+                }
+
+                PrimaryButton {
+                    label: @tr("Smoke test encoders");
+                    enabled: !Bridge.codec-test-running;
+                    clicked => {
+                        Bridge.run-codec-smoke-only();
+                    }
+                }
+
+                Separator { }
+
+                // ── Log output (slintcn ScrollArea) ────────────────────
+                ScrollArea {
+                    content-height: log.preferred-height;
+                    vertical-stretch: 1;
+                    log := Text {
+                        width: parent.width;
+                        text: Bridge.codec-test-log == "" ? @tr("Press a button above to start.") : Bridge.codec-test-log;
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        wrap: word-wrap;
+                    }
                 }
             }
         }
-    }
+    }   // end FocusScope
 }
