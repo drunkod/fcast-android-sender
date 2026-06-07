@@ -463,4 +463,11 @@ export global Bridge {
     public function change-state(to: AppState) {
         Bridge.app-state = to;
     }
+
+    // ── Codec test (Phase 8 wiring) ──────────────────────────────────────
+    in property <string> codec-test-log: "";
+    in property <bool>   codec-test-running: false;
+    callback run-codec-test();        // full dump + quick-find + smoke test
+    callback run-codec-dump-only();   // just the codec list dump (faster)
+    callback run-codec-smoke-only();  // just the encoder smoke test
 }
