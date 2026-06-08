@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 pub mod app;
 pub mod application;
+pub mod codec_perf;
 pub mod command;
 pub mod config;
 pub mod jni_bridge;

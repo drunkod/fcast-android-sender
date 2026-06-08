@@ -216,6 +216,8 @@ pub fn run_pipeline_benchmark(name: &str, pipeline_desc: &str, timeout: Duration
 
 /// List all GStreamer androidmedia (amc*) and codec-related factories.
 pub fn list_codec_factories() -> String {
+    use gst::prelude::*;
+
     if let Err(e) = crate::platform::gst_init::ensure_gstreamer_initialized() {
         return format!("GStreamer init failed: {e}\n");
     }
@@ -284,6 +286,8 @@ pub fn list_codec_factories() -> String {
 /// Find the best androidmedia encoder factory for a given codec hint
 /// (e.g. "avc", "hevc", "h264", "h265").
 fn find_amc_encoder(codec_hint: &str) -> Option<String> {
+    use gst::prelude::*;
+
     let factories = gst::ElementFactory::factories_with_type(
         gst::ElementFactoryType::ENCODER | gst::ElementFactoryType::MEDIA_VIDEO,
         gst::Rank::NONE,
@@ -305,6 +309,8 @@ fn find_amc_encoder(codec_hint: &str) -> Option<String> {
 
 /// Find the best androidmedia decoder factory for a given codec hint.
 fn find_amc_decoder(codec_hint: &str) -> Option<String> {
+    use gst::prelude::*;
+
     let factories = gst::ElementFactory::factories_with_type(
         gst::ElementFactoryType::DECODER | gst::ElementFactoryType::MEDIA_VIDEO,
         gst::Rank::NONE,
