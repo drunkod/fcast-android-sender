@@ -378,6 +378,14 @@ fn encode_decode_pipeline(
 
 // ─── Benchmark suites ────────────────────────────────────────────────────────
 
+/// Which process is calling. HW decode is only allowed in the isolated benchmark
+/// process, because amcviddec calls eglTerminate() on the shared EGLDisplay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessSafety {
+    UiProcess,
+    IsolatedBenchmarkProcess,
+}
+
 /// Best result from a list of BenchResults.
 fn best_result(results: &[BenchResult]) -> Option<&BenchResult> {
     results
@@ -542,18 +550,22 @@ pub fn run_decode_benchmarks() -> String {
     report
 }
 
-/// Run all benchmarks: list factories, encode, decode, and recommendation.
-pub fn run_full_benchmark() -> String {
+/// Decode benchmark gated by process. In the UI process it returns a note
+/// instead of running HW decode (which would crash the Slint renderer).
+pub fn run_decode_benchmarks_checked(process_safety: ProcessSafety) -> String {
+    match process_safety {
+        ProcessSafety::UiProcess => "===== DECODE BENCHMARK =====\n\
+Skipped in UI process: HW androidmedia decode calls eglTerminate() and\n\
+disturbs the Slint/Skia EGL context. Run via the :codec_bench service.\n"
+            .into(),
+        ProcessSafety::IsolatedBenchmarkProcess => run_decode_benchmarks(),
+    }
+}
+
+/// Recommendation block (AVC vs HEVC HW encoder availability). Safe in any process.
+pub fn encoder_recommendation() -> String {
     let mut report = String::new();
-
-    report.push_str(&list_codec_factories());
-    report.push('\n');
-    report.push_str(&run_encode_benchmarks());
-    report.push('\n');
-    report.push_str(&run_decode_benchmarks());
-
-    // Final recommendation
-    report.push_str("\n===== RECOMMENDATION =====\n");
+    report.push_str("===== RECOMMENDATION =====\n");
 
     let avc_enc = find_amc_encoder("avc").or_else(|| find_amc_encoder("h264"));
     let hevc_enc = find_amc_encoder("hevc").or_else(|| find_amc_encoder("h265"));
@@ -573,6 +585,34 @@ pub fn run_full_benchmark() -> String {
             "No HW encoder found! Software x264enc fallback will have lower performance.\n",
         );
     }
+    report
+}
 
+/// Safe to call from the Slint/UI process. Never runs HW decode.
+pub fn run_sender_safe_benchmark() -> String {
+    let mut report = String::new();
+    report.push_str(&list_codec_factories());
+    report.push('\n');
+    report.push_str(&run_encode_benchmarks());
+    report.push('\n');
+    report.push_str(&run_decode_benchmarks_checked(ProcessSafety::UiProcess));
+    report.push('\n');
+    report.push_str(&encoder_recommendation());
+    report
+}
+
+/// Only call inside the :codec_bench process. Decode runs LAST so factory + encode
+/// results are already captured before any EGL damage.
+pub fn run_isolated_full_benchmark() -> String {
+    let mut report = String::new();
+    report.push_str(&list_codec_factories());
+    report.push('\n');
+    report.push_str(&run_encode_benchmarks());
+    report.push('\n');
+    report.push_str(&run_decode_benchmarks_checked(
+        ProcessSafety::IsolatedBenchmarkProcess,
+    ));
+    report.push('\n');
+    report.push_str(&encoder_recommendation());
     report
 }

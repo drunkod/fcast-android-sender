@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 pub mod app;
 pub mod application;
+pub mod codec_bench_jni;
+pub mod codec_bench_plan;
 pub mod codec_perf;
 pub mod command;
 pub mod config;
@@ -40,6 +42,10 @@ lazy_static::lazy_static! {
     pub static ref FRAME_PAIR: Arc<migration_runtime::FramePair> = migration_runtime::FramePair::new();
     pub static ref FRAME_POOL: Mutex<gst_video::VideoBufferPool> = Mutex::new(gst_video::VideoBufferPool::new());
 }
+
+#[cfg(target_os = "android")]
+pub static PERF_UI_WEAK: once_cell::sync::OnceCell<slint::Weak<MainWindow>> =
+    once_cell::sync::OnceCell::new();
 
 #[cfg(target_os = "android")]
 lazy_static::lazy_static! {
@@ -213,6 +219,39 @@ pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCameraPermiss
     granted: jni::sys::jboolean,
 ) {
     crate::jni_bridge::main_activity::native_camera_permission_result(env, class, granted)
+}
+
+#[cfg(target_os = "android")]
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCodecBenchmarkResult<'local>(
+    mut env: jni::JNIEnv<'local>,
+    _class: jni::objects::JClass<'local>,
+    result_json: jni::objects::JString<'local>,
+) {
+    use crate::codec_bench_plan::CodecBenchResponse;
+
+    let json: String = match env.get_string(&result_json) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+
+    let text = match serde_json::from_str::<CodecBenchResponse>(&json) {
+        Ok(resp) if resp.ok => resp.report,
+        Ok(resp) => format!("Benchmark failed: {}", resp.error.unwrap_or_default()),
+        Err(e) => format!("Bad benchmark result JSON: {e}\nraw: {json}"),
+    };
+
+    if let Some(weak) = PERF_UI_WEAK.get() {
+        let weak = weak.clone();
+        let _ = weak.upgrade_in_event_loop(move |ui| {
+            use slint::ComponentHandle;
+            let bridge = ui.global::<Bridge>();
+            let lines: Vec<slint::SharedString> = text.lines().map(|l| l.into()).collect();
+            bridge.set_perf_test_log_lines(std::rc::Rc::new(slint::VecModel::from(lines)).into());
+            bridge.set_perf_test_log(text.into());
+            bridge.set_perf_test_running(false);
+        });
+    }
 }
 
 #[cfg(target_os = "android")]
