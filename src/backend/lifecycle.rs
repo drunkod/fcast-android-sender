@@ -357,6 +357,7 @@ fn read_config_from_bridge(weak: &Weak<MainWindow>) -> StoredBackendConfig {
             StoredBackendConfig {
                 camera_rtmp: cfg.camera_rtmp,
                 global_camera: cfg.global_camera,
+                srt_destination: cfg.srt_destination,
                 ..Default::default()
             }
         }

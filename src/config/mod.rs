@@ -1,6 +1,6 @@
 pub mod migration;
 
-pub use crate::backend::persistence::{CameraRtmpConfig, StoredBackendConfig};
+pub use crate::backend::persistence::{CameraRtmpConfig, SrtDestinationConfig, StoredBackendConfig};
 use once_cell::sync::OnceCell;
 use std::path::PathBuf;
 

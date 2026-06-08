@@ -19,6 +19,31 @@ impl Default for CameraRtmpConfig {
     }
 }
 
+fn default_srt_latency_ms() -> i32 {
+    200
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct SrtDestinationConfig {
+    pub url: String,
+    #[serde(default = "default_srt_latency_ms")]
+    pub latency_ms: i32,
+    /// 0 = None, 1 = AES-128, 2 = AES-192, 3 = AES-256. The passphrase itself
+    /// is stored separately in the secret store, never in this file.
+    #[serde(default)]
+    pub pbkeylen_idx: i32,
+}
+
+impl Default for SrtDestinationConfig {
+    fn default() -> Self {
+        Self {
+            url: String::new(),
+            latency_ms: 200,
+            pbkeylen_idx: 0,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct GlobalCameraConfig {
     pub camera_idx: i32,
@@ -55,6 +80,8 @@ pub struct StoredBackendConfig {
     pub camera_rtmp: Option<CameraRtmpConfig>,
     #[serde(default)]
     pub global_camera: Option<GlobalCameraConfig>,
+    #[serde(default)]
+    pub srt_destination: Option<SrtDestinationConfig>,
 }
 
 impl StoredBackendConfig {
@@ -67,6 +94,7 @@ impl StoredBackendConfig {
             gstpop_api_key: None,
             camera_rtmp: None,
             global_camera: None,
+            srt_destination: None,
         }
     }
 

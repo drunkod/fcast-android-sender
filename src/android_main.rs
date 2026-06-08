@@ -497,6 +497,21 @@ fn android_main(app: PlatformApp) {
     let saved_key = crate::secret::load("cam_rtmp_stream_key").ok().flatten();
     b.set_cam_rtmp_stream_key(saved_key.as_deref().unwrap_or("Byhag83gMx").into());
 
+    // Hydrate the SRT destination from saved config (passphrase comes from the
+    // secret store, never from backend.json).
+    let srt_cfg = backend_cfg.srt_destination.clone().unwrap_or_default();
+    {
+        let mut srt = b.get_srt_destination();
+        srt.uri = srt_cfg.url.clone().into();
+        srt.latency_ms = srt_cfg.latency_ms;
+        b.set_srt_destination(srt);
+    }
+    b.set_srt_destination_pbkeylen_idx(srt_cfg.pbkeylen_idx);
+    let srt_pass = crate::secret::load("srt_destination_passphrase")
+        .ok()
+        .flatten();
+    b.set_srt_destination_passphrase(srt_pass.as_deref().unwrap_or("").into());
+
     ui.global::<Bridge>().on_save_cam_rtmp_config({
         let ui_weak = ui.as_weak();
         move || {
@@ -1432,6 +1447,34 @@ fn android_main(app: PlatformApp) {
         }
     }
 
+    fn tear_down_srt() {
+        for id in ["srt-cam-src", "srt-dest"] {
+            let _ = migration_runtime::runtime::handle_command(Command::Remove { id: id.into() });
+        }
+    }
+
+    // SRT destination state lives in the `srt-destination` struct property, so
+    // updates are get-modify-set (mirrors the cam-rtmp flat-property helpers).
+    fn srt_set_state(ui: &slint::Weak<MainWindow>, state: MixerState) {
+        let _ = ui.upgrade_in_event_loop(move |u| {
+            let b = u.global::<Bridge>();
+            let mut d = b.get_srt_destination();
+            d.state = state;
+            b.set_srt_destination(d);
+        });
+    }
+
+    fn srt_fail(ui: &slint::Weak<MainWindow>, msg: impl Into<String>) {
+        let msg: slint::SharedString = msg.into().into();
+        let _ = ui.upgrade_in_event_loop(move |u| {
+            let b = u.global::<Bridge>();
+            let mut d = b.get_srt_destination();
+            d.last_error = msg;
+            d.state = MixerState::Error;
+            b.set_srt_destination(d);
+        });
+    }
+
     fn fail(ui: &slint::Weak<MainWindow>, msg: impl Into<String>) {
         let msg: slint::SharedString = msg.into().into();
         let _ = ui.upgrade_in_event_loop(move |u| {
@@ -2018,6 +2061,189 @@ fn android_main(app: PlatformApp) {
         }
     });
 
+    // ── SRT destination: save / start / stop (camera → SRT, Migration only) ──
+    ui.global::<Bridge>().on_save_srt_destination_config({
+        let ui_weak = ui.as_weak();
+        move || {
+            let Some(ui) = ui_weak.upgrade() else { return };
+            let b = ui.global::<Bridge>();
+
+            // Passphrase goes to the secret store, never to backend.json.
+            let pass = b.get_srt_destination_passphrase().to_string();
+            if let Err(e) = crate::secret::store("srt_destination_passphrase", &pass) {
+                tracing::error!("Failed to store srt_destination_passphrase: {e}");
+            }
+
+            let d = b.get_srt_destination();
+            let url = d.uri.to_string();
+            let latency_ms = d.latency_ms;
+            let pbkeylen_idx = b.get_srt_destination_pbkeylen_idx();
+            if let Err(e) = crate::config::update(move |cfg| {
+                cfg.srt_destination = Some(crate::config::SrtDestinationConfig {
+                    url,
+                    latency_ms,
+                    pbkeylen_idx,
+                });
+            }) {
+                tracing::error!("Failed to save SRT config: {e}");
+            }
+            tracing::info!("SRT destination settings saved");
+        }
+    });
+
+    ui.global::<Bridge>().on_start_srt_destination({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+
+            let (backend, uri, latency, pass, pbkeylen_idx, cam_idx, res_idx, fps_idx, mirror, stab, zoom) =
+                match ui.upgrade() {
+                    Some(u) => {
+                        let b = u.global::<Bridge>();
+                        let d = b.get_srt_destination();
+                        (
+                            b.get_media_backend(),
+                            d.uri.to_string(),
+                            d.latency_ms,
+                            b.get_srt_destination_passphrase().to_string(),
+                            b.get_srt_destination_pbkeylen_idx(),
+                            b.get_camera_idx(),
+                            b.get_resolution_idx(),
+                            b.get_framerate_idx(),
+                            b.get_camera_mirror_front(),
+                            b.get_camera_stabilization(),
+                            b.get_camera_zoom_level(),
+                        )
+                    }
+                    None => return,
+                };
+
+            // SRT destination only runs on the Migration backend (gst-pop's
+            // camera path is RTMP-specific).
+            if backend != MediaBackendKind::Migration {
+                return srt_fail(&ui, "SRT destination requires the Migration backend");
+            }
+            if uri.trim().is_empty() {
+                return srt_fail(&ui, "SRT URL is empty");
+            }
+
+            srt_set_state(&ui, MixerState::Starting);
+
+            let (width, height) = match res_idx {
+                0 => (854, 480),
+                1 => (1280, 720),
+                3 => (3840, 2160),
+                _ => (1920, 1080),
+            };
+            let fps = match fps_idx {
+                0 => 24,
+                2 => 60,
+                _ => 30,
+            };
+            // Encryption index → SRT pbkeylen bytes (matches the UI cycler).
+            let (passphrase, pbkeylen) = match pbkeylen_idx {
+                1 => (Some(pass), Some(16)),
+                2 => (Some(pass), Some(24)),
+                3 => (Some(pass), Some(32)),
+                _ => (None, None),
+            };
+
+            let ui_clone = ui.clone();
+            tokio::spawn(async move {
+                if let Err(e) = migration_runtime::runtime::start_graph_runtime(
+                    migration_runtime::runtime::RuntimeHandles {
+                        frame_pair: crate::FRAME_PAIR.clone(),
+                    },
+                ) {
+                    return srt_fail(&ui_clone, format!("start_graph_runtime: {e}"));
+                }
+
+                let commands = vec![
+                    Command::CreateCameraSource {
+                        id: "srt-cam-src".into(),
+                        camera_idx: cam_idx as u32,
+                        width,
+                        height,
+                        fps,
+                        mirror,
+                        stabilization: stab,
+                        zoom,
+                    },
+                    Command::CreateDestination {
+                        id: "srt-dest".into(),
+                        family: DestinationFamily::Srt {
+                            uri,
+                            latency,
+                            passphrase,
+                            pbkeylen,
+                        },
+                        audio: false,
+                        video: true,
+                    },
+                    Command::Connect {
+                        link_id: "srt-link".into(),
+                        src_id: "srt-cam-src".into(),
+                        sink_id: "srt-dest".into(),
+                        audio: false,
+                        video: true,
+                        config: None,
+                    },
+                    Command::Start {
+                        id: "srt-dest".into(),
+                        cue_time: None,
+                        end_time: None,
+                    },
+                    Command::Start {
+                        id: "srt-cam-src".into(),
+                        cue_time: None,
+                        end_time: None,
+                    },
+                ];
+                for cmd in commands {
+                    if let CommandResult::Error(err) =
+                        migration_runtime::runtime::handle_command(cmd)
+                    {
+                        tear_down_srt();
+                        return srt_fail(&ui_clone, err);
+                    }
+                }
+
+                if let Err(e) = upcall_start_camera_capture(
+                    cam_idx as u32,
+                    width,
+                    height,
+                    fps,
+                    mirror,
+                    stab,
+                    zoom,
+                ) {
+                    tear_down_srt();
+                    return srt_fail(&ui_clone, format!("startCameraCapture: {e}"));
+                }
+                // State flips to Running on CameraEvent::Started.
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_stop_srt_destination({
+        let ui_weak = ui.as_weak();
+        move || {
+            let ui = ui_weak.clone();
+            srt_set_state(&ui, MixerState::Stopping);
+            tokio::spawn(async move {
+                let _ = upcall_stop_camera_capture();
+                tear_down_srt();
+                let _ = ui.upgrade_in_event_loop(|u| {
+                    let b = u.global::<Bridge>();
+                    let mut d = b.get_srt_destination();
+                    d.state = MixerState::Idle;
+                    d.last_error = "".into();
+                    b.set_srt_destination(d);
+                });
+            });
+        }
+    });
+
     // ── Listen to camera lifecycle events from Kotlin via JNI ──
     let cam_event_ui_weak = ui.as_weak();
     std::thread::spawn(move || loop {
@@ -2029,6 +2255,13 @@ fn android_main(app: PlatformApp) {
                         let b = u.global::<Bridge>();
                         b.set_cam_rtmp_camera_permission(true);
                         b.set_cam_rtmp_state(MixerState::Running);
+                        // Promote an in-flight SRT destination to Running too — the
+                        // camera is shared, so only one of the two is Starting.
+                        let mut srt = b.get_srt_destination();
+                        if srt.state == MixerState::Starting {
+                            srt.state = MixerState::Running;
+                            b.set_srt_destination(srt);
+                        }
                     });
                 }
                 crate::jni_bridge::main_activity::CameraEvent::Stopped => {
@@ -2069,6 +2302,17 @@ fn android_main(app: PlatformApp) {
                     }
 
                     fail(&cam_event_ui_weak, reason.clone());
+
+                    // If an SRT destination was in flight, surface the failure there
+                    // too and tear down its (distinct) graph nodes.
+                    let srt_active = cam_event_ui_weak.upgrade().map(|u| {
+                        let st = u.global::<Bridge>().get_srt_destination().state;
+                        st == MixerState::Starting || st == MixerState::Running
+                    });
+                    if srt_active == Some(true) {
+                        tear_down_srt();
+                        srt_fail(&cam_event_ui_weak, reason.clone());
+                    }
 
                     if reason == "Camera permission denied" {
                         let _ = cam_event_ui_weak.upgrade_in_event_loop(|u| {

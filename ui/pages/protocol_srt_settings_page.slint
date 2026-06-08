@@ -1,7 +1,7 @@
 // ui/pages/protocol_srt_settings_page.slint
 // Moblin analogue: View/Settings/Streams/Stream/Srt/StreamSrtSettingsView.swift
 import { Theme } from "../theme.slint";
-import { Bridge, Panel, MixerState } from "../bridge.slint";
+import { Bridge, MixerState } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { PanelHeader } from "../components/panel_chrome.slint";
 import {
@@ -311,11 +311,24 @@ export component ProtocolSrtSettingsPage inherits Rectangle {
 
                     Button {
                         text: @tr("Save");
+                        variant: ButtonVariant.outline;
+                        size: ButtonSize.lg;
+                        clicked => {
+                            Bridge.srt-destination.uri = root.draft-uri;
+                            Bridge.save-srt-destination-config();
+                        }
+                    }
+
+                    // Go Live — only when idle. Commits the draft URI, persists,
+                    // then starts the camera → SRT graph (Migration backend).
+                    if Bridge.srt-destination.state == MixerState.idle: Button {
+                        text: @tr("Go Live");
                         variant: ButtonVariant.default;
                         size: ButtonSize.lg;
                         clicked => {
                             Bridge.srt-destination.uri = root.draft-uri;
                             Bridge.save-srt-destination-config();
+                            Bridge.start-srt-destination();
                         }
                     }
 

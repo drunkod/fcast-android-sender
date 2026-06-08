@@ -140,6 +140,20 @@ export component FullSettingsPage inherits Rectangle {
                         clicked => { PanelBridge.push(Panel.camera-rtmp-stream); }
                     }
                     SettingsValueRow {
+                        icon: "🅡";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("RTMP Settings");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.protocol-rtmp-settings); }
+                    }
+                    SettingsValueRow {
+                        icon: "🛰";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("SRT Stream");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.protocol-srt-settings); }
+                    }
+                    SettingsValueRow {
                         icon: "📺";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Max resolution");
