@@ -466,8 +466,14 @@ export global Bridge {
 
     // ── Codec test (Phase 8 wiring) ──────────────────────────────────────
     in property <string> codec-test-log: "";
+    // Same report split into lines so the page can render it in a virtualised
+    // ListView — a single huge Text in a Flickable janks on scroll.
+    in property <[string]> codec-test-log-lines: [];
     in property <bool>   codec-test-running: false;
     callback run-codec-test();        // full dump + quick-find + smoke test
     callback run-codec-dump-only();   // just the codec list dump (faster)
     callback run-codec-smoke-only();  // just the encoder smoke test
+    callback save-codec-log();        // write the current report to a file
+    // Result of the last save — absolute path on success, or an error string.
+    in property <string> codec-test-save-status: "";
 }

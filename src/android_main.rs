@@ -1199,13 +1199,37 @@ fn android_main(app: PlatformApp) {
     });
 
     // ── Codec test callbacks ─────────────────────────────────────────────
+    // Publish a report both as the raw string and as a per-line model, so the
+    // page can render it in a virtualised ListView (a single huge Text janks).
+    fn set_codec_log(ui: &MainWindow, text: &str) {
+        let lines: Vec<slint::SharedString> = text.lines().map(|l| l.into()).collect();
+        ui.global::<Bridge>()
+            .set_codec_test_log_lines(std::rc::Rc::new(slint::VecModel::from(lines)).into());
+        ui.global::<Bridge>().set_codec_test_log(text.into());
+    }
+
+    // Write the current report to <files_dir>/codec-logs/codec-dump-<unixts>.log
+    // (app-internal storage — no permission needed). Returns the absolute path.
+    fn save_codec_log_to_file(text: &str) -> Result<String, String> {
+        let dir = crate::config::get_files_dir()
+            .ok_or_else(|| "files dir not initialised".to_string())?
+            .join("codec-logs");
+        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir: {e}"))?;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let path = dir.join(format!("codec-dump-{ts}.log"));
+        std::fs::write(&path, text).map_err(|e| format!("write: {e}"))?;
+        Ok(path.display().to_string())
+    }
+
     ui.global::<Bridge>().on_run_codec_test({
         let ui_weak = ui.as_weak();
         move || {
             let _ = ui_weak.upgrade_in_event_loop(|ui| {
                 ui.global::<Bridge>().set_codec_test_running(true);
-                ui.global::<Bridge>()
-                    .set_codec_test_log("Running full codec test…\n".into());
+                set_codec_log(&ui, "Running full codec test…");
             });
             let ui_inner = ui_weak.clone();
             std::thread::spawn(move || {
@@ -1230,7 +1254,7 @@ fn android_main(app: PlatformApp) {
                 }
 
                 let _ = ui_inner.upgrade_in_event_loop(move |ui| {
-                    ui.global::<Bridge>().set_codec_test_log(report.into());
+                    set_codec_log(&ui, &report);
                     ui.global::<Bridge>().set_codec_test_running(false);
                 });
             });
@@ -1242,8 +1266,7 @@ fn android_main(app: PlatformApp) {
         move || {
             let _ = ui_weak.upgrade_in_event_loop(|ui| {
                 ui.global::<Bridge>().set_codec_test_running(true);
-                ui.global::<Bridge>()
-                    .set_codec_test_log("Dumping codecs…\n".into());
+                set_codec_log(&ui, "Dumping codecs…");
             });
             let ui_inner = ui_weak.clone();
             std::thread::spawn(move || {
@@ -1252,7 +1275,7 @@ fn android_main(app: PlatformApp) {
                     Err(e) => format!("FAIL: {e}\n"),
                 };
                 let _ = ui_inner.upgrade_in_event_loop(move |ui| {
-                    ui.global::<Bridge>().set_codec_test_log(report.into());
+                    set_codec_log(&ui, &report);
                     ui.global::<Bridge>().set_codec_test_running(false);
                 });
             });
@@ -1264,8 +1287,7 @@ fn android_main(app: PlatformApp) {
         move || {
             let _ = ui_weak.upgrade_in_event_loop(|ui| {
                 ui.global::<Bridge>().set_codec_test_running(true);
-                ui.global::<Bridge>()
-                    .set_codec_test_log("Running encoder smoke test…\n".into());
+                set_codec_log(&ui, "Running encoder smoke test…");
             });
             let ui_inner = ui_weak.clone();
             std::thread::spawn(move || {
@@ -1274,9 +1296,30 @@ fn android_main(app: PlatformApp) {
                     Err(e) => format!("FAIL: {e}\n"),
                 };
                 let _ = ui_inner.upgrade_in_event_loop(move |ui| {
-                    ui.global::<Bridge>().set_codec_test_log(report.into());
+                    set_codec_log(&ui, &report);
                     ui.global::<Bridge>().set_codec_test_running(false);
                 });
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_save_codec_log({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                let bridge = ui.global::<Bridge>();
+                let text = bridge.get_codec_test_log().to_string();
+                let status = match save_codec_log_to_file(&text) {
+                    Ok(path) => {
+                        info!("codec log saved to {path}");
+                        format!("Saved to {path}")
+                    }
+                    Err(e) => {
+                        error!("codec log save failed: {e}");
+                        format!("Save failed: {e}")
+                    }
+                };
+                bridge.set_codec_test_save_status(status.into());
             });
         }
     });
