@@ -9,9 +9,7 @@ pub use kind::BackendKind;
 pub use migration_backend::MigrationBackend;
 
 use anyhow::Result;
-use parking_lot::RwLock;
 use serde_json::Value;
-use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct BackendStatus {
@@ -24,7 +22,11 @@ pub struct BackendStatus {
 
 impl Default for BackendStatus {
     fn default() -> Self {
-        Self { status_text: String::new(), error_text: String::new(), is_connected: true }
+        Self {
+            status_text: String::new(),
+            error_text: String::new(),
+            is_connected: true,
+        }
     }
 }
 
@@ -37,15 +39,34 @@ pub trait MediaBackend: Send + Sync {
     async fn shutdown(&self) -> Result<()>;
 }
 
-static BACKEND: once_cell::sync::Lazy<RwLock<Arc<dyn MediaBackend>>> =
-    once_cell::sync::Lazy::new(|| RwLock::new(Arc::new(MigrationBackend::new())));
+pub mod registry;
 
-pub fn current() -> Arc<dyn MediaBackend> {
-    BACKEND.read().clone()
+#[deprecated(note = "Use crate::app::app().registry() — see refactor step 05.")]
+#[doc(hidden)]
+#[allow(dead_code)]
+static BACKEND_LEGACY_GUARD: () = ();
+
+/// Deprecated. Returns the *migration* backend from the new registry. Existing
+/// callers expected the migration backend by default — that contract is
+/// preserved during the soak window.
+#[deprecated(
+    note = "Use crate::app::app().registry().require(BackendKind::…) — see refactor step 05."
+)]
+pub fn current() -> std::sync::Arc<dyn MediaBackend> {
+    crate::app::app()
+        .registry()
+        .require(crate::backend::registry::BackendKind::Migration)
+        .expect("legacy current() called before any backend installed")
 }
 
-pub fn install(new_backend: Arc<dyn MediaBackend>) {
-    *BACKEND.write() = new_backend;
+#[deprecated(
+    note = "Use crate::app::app().registry().install(BackendKind::…, backend) — see refactor step 05."
+)]
+pub fn install(new_backend: std::sync::Arc<dyn MediaBackend>) {
+    crate::app::app().registry().install(
+        crate::backend::registry::BackendKind::Migration,
+        new_backend,
+    );
 }
 
 pub fn from_slint(kind: crate::MediaBackendKind) -> BackendKind {

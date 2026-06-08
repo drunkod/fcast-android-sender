@@ -1,0 +1,7 @@
+{
+  "style": "default",
+  "baseColor": "neutral",
+  "outDir": "ui/slintcn",
+  "componentsDir": "ui/slintcn/components",
+  "themeDir": "ui/slintcn/theme"
+}

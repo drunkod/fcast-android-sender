@@ -1,3 +1,4 @@
+pub mod camera_source;
 pub mod control;
 pub mod destination;
 pub mod mixer;
@@ -5,6 +6,7 @@ pub mod screen_capture;
 pub mod source;
 pub mod video_generator;
 
+pub use camera_source::CameraSourceNode;
 pub use destination::DestinationNode;
 pub use mixer::MixerNode;
 pub use screen_capture::ScreenCaptureNode;

@@ -1,0 +1,132 @@
+// stream_status_overlay.slint — Moblin-style floating status overlays.
+//
+// Mirrors:
+//   StreamOverlayLeftView.swift  → StreamLeftOverlay
+//   StreamOverlayRightView.swift → StreamRightBadges
+//
+// Visual language (Moblin):
+//   backgroundColor = Color.black.opacity(0.4) → #00000066
+//   cornerRadius = 5px
+//   font: 12px semibold white
+//   status dot: ● colored per severity / connection state
+//   spacing between badges: 1px (compact, matches Moblin's VStack spacing: 1)
+
+import { Bridge, AppState, StatusSeverity } from "../bridge.slint";
+import { Theme } from "../theme.slint";
+
+// ── Primitive: one dark translucent pill ──────────────────────────────────────
+component StreamBadge inherits Rectangle {
+    in property <string> icon: "";
+    in property <color>  icon-color: #ffffff;
+    in property <string> label;
+    in property <color>  label-color: #ffffff;
+
+    height: 26px;
+    border-radius: 5px;
+    background: #00000066;
+
+    HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 8px;
+        spacing: 4px;
+
+        if root.icon != "": Text {
+            text:  root.icon;
+            color: root.icon-color;
+            font-size: 11px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text:  root.label;
+            color: root.label-color;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// ── StreamLeftOverlay ─────────────────────────────────────────────────────────
+// Top-left stack (mirrors LeftOverlayView + StatusesView):
+//   Row 1 — 📷 receiver/stream name
+//   Row 2 — ● connection state (color-coded)
+//   Row 3 — ● LIVE indicator (only when casting)
+export component StreamLeftOverlay inherits Rectangle {
+    background: transparent;
+
+    VerticalLayout {
+        alignment: start;
+        padding-left: Theme.padding-screen;
+        padding-top:  Theme.spacing-default;
+        spacing: 1px;
+
+        // Camera / receiver name.
+        HorizontalLayout {
+            alignment: start;
+            StreamBadge {
+                icon: "📷";
+                label: Bridge.selected-receiver-name == ""
+                    ? @tr("Camera")
+                    : Bridge.selected-receiver-name;
+            }
+        }
+
+        // Connection state dot + label.
+        HorizontalLayout {
+            alignment: start;
+            StreamBadge {
+                icon: "●";
+                icon-color:
+                    Bridge.app-state == AppState.Casting         ? #22c55e
+                  : Bridge.app-state == AppState.Connecting      ? #f59e0b
+                  : Bridge.app-state == AppState.WaitingForMedia ? #f59e0b
+                  :                                                #ef4444;
+                label:
+                    Bridge.app-state == AppState.Casting            ? @tr("Live")
+                  : Bridge.app-state == AppState.Connecting         ? @tr("Connecting")
+                  : Bridge.app-state == AppState.WaitingForMedia    ? @tr("Waiting")
+                  : Bridge.app-state == AppState.SelectingSettings  ? @tr("Setting up")
+                  :                                                    @tr("Disconnected");
+            }
+        }
+    }
+}
+
+// ── StreamRightBadges ─────────────────────────────────────────────────────────
+// Top-right stack (mirrors RightOverlayTopView / StatusesView):
+//   One badge per Bridge.status-items, right-aligned, stacked vertically.
+//   Caller sets width = parent.width so alignment:end works.
+//   right-inset offsets badges left of the camera HUD.
+export component StreamRightBadges inherits Rectangle {
+    in property <length> right-inset: 0px;
+
+    background: transparent;
+
+    VerticalLayout {
+        alignment: start;
+        padding-right: Theme.padding-screen + root.right-inset;
+        padding-top:   Theme.spacing-default;
+        spacing: 1px;
+
+        for item in Bridge.status-items: HorizontalLayout {
+            alignment: end;
+
+            StreamBadge {
+                icon: item.severity == StatusSeverity.error   ? "●"
+                    : item.severity == StatusSeverity.warning ? "●"
+                    :                                           "";
+                icon-color: item.severity == StatusSeverity.error   ? #ef4444
+                          : item.severity == StatusSeverity.warning ? #fbbf24
+                          :                                           #ffffff;
+                label: item.label == "" ? item.value
+                     : item.value == "" ? item.label
+                     :                    item.label + ": " + item.value;
+                label-color: item.severity == StatusSeverity.error   ? #fca5a5
+                           : item.severity == StatusSeverity.warning ? #fde68a
+                           :                                           #ffffff;
+            }
+        }
+    }
+}

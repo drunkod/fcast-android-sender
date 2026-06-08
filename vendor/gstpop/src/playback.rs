@@ -73,59 +73,53 @@ impl PlaybackTracker {
         loop {
             match event_rx.recv().await {
                 Ok(event) => match &event {
-                    PipelineEvent::Eos { pipeline_id } => {
-                        if self.pending.remove(pipeline_id) {
-                            info!(
-                                "Playback mode: pipeline '{}' reached EOS ({}/{} remaining)",
-                                pipeline_id,
-                                self.pending.len(),
-                                self.started_count
-                            );
-                        }
+                    PipelineEvent::Eos { pipeline_id } if self.pending.remove(pipeline_id) => {
+                        info!(
+                            "Playback mode: pipeline '{}' reached EOS ({}/{} remaining)",
+                            pipeline_id,
+                            self.pending.len(),
+                            self.started_count
+                        );
                     }
                     PipelineEvent::Error {
                         pipeline_id,
                         message,
-                    } => {
-                        if self.pending.remove(pipeline_id) {
-                            self.had_error = true;
-                            warn!(
-                                "Playback mode: pipeline '{}' errored: {} ({}/{} remaining)",
-                                pipeline_id,
-                                message,
-                                self.pending.len(),
-                                self.started_count
-                            );
-                        }
+                    } if self.pending.remove(pipeline_id) => {
+                        self.had_error = true;
+                        warn!(
+                            "Playback mode: pipeline '{}' errored: {} ({}/{} remaining)",
+                            pipeline_id,
+                            message,
+                            self.pending.len(),
+                            self.started_count
+                        );
                     }
                     PipelineEvent::Unsupported {
                         pipeline_id,
                         message,
-                    } => {
-                        if self.pending.remove(pipeline_id) {
-                            self.had_unsupported = true;
-                            if self.unsupported_message.is_none() {
-                                self.unsupported_message = Some(message.clone());
-                            }
-                            warn!(
-                                "Playback mode: pipeline '{}' unsupported: {} ({}/{} remaining)",
-                                pipeline_id,
-                                message,
-                                self.pending.len(),
-                                self.started_count
-                            );
+                    } if self.pending.remove(pipeline_id) => {
+                        self.had_unsupported = true;
+                        if self.unsupported_message.is_none() {
+                            self.unsupported_message = Some(message.clone());
                         }
+                        warn!(
+                            "Playback mode: pipeline '{}' unsupported: {} ({}/{} remaining)",
+                            pipeline_id,
+                            message,
+                            self.pending.len(),
+                            self.started_count
+                        );
                     }
-                    PipelineEvent::PipelineRemoved { pipeline_id } => {
-                        if self.pending.remove(pipeline_id) {
-                            self.had_error = true;
-                            warn!(
-                                "Playback mode: tracked pipeline '{}' was removed externally ({}/{} remaining)",
-                                pipeline_id,
-                                self.pending.len(),
-                                self.started_count
-                            );
-                        }
+                    PipelineEvent::PipelineRemoved { pipeline_id }
+                        if self.pending.remove(pipeline_id) =>
+                    {
+                        self.had_error = true;
+                        warn!(
+                            "Playback mode: tracked pipeline '{}' was removed externally ({}/{} remaining)",
+                            pipeline_id,
+                            self.pending.len(),
+                            self.started_count
+                        );
                     }
                     _ => {}
                 },

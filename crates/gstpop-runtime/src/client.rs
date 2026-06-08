@@ -16,7 +16,7 @@ use tokio_tungstenite::{
 
 use super::protocol::{classify, ClassifiedFrame, Event, Request, Response};
 
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 const EVENT_CAPACITY: usize = 64;
 
 type WsWrite = futures_util::stream::SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
@@ -140,5 +140,22 @@ impl GstPopClient {
     pub async fn close(&self) {
         let mut guard = self.write.lock().await;
         let _ = guard.send(Message::Close(None)).await;
+    }
+
+    pub async fn push_buffer(
+        &self,
+        pipeline_id: &str,
+        elem_name: &str,
+        data: &[u8],
+        pts_ns: u64,
+    ) -> Result<()> {
+        let msg_bytes =
+            gstpop::websocket::push_buffer_wire::encode(pipeline_id, elem_name, pts_ns, data);
+        let mut guard = self.write.lock().await;
+        guard
+            .send(Message::Binary(msg_bytes.into()))
+            .await
+            .context("ws send binary")?;
+        Ok(())
     }
 }

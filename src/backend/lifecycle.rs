@@ -1,3 +1,7 @@
+// Uses deprecated `backend::current` / `backend::install` shims pending the
+// refactor-step-05 migration to `crate::app::app().registry()` (see super::*).
+#![allow(deprecated)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -129,8 +133,7 @@ impl BackendLifecycle {
         // ── 1Hz daemon status poller ──────────────────────────────────────────
         let poll_weak = ui.as_weak();
         tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(std::time::Duration::from_millis(1000));
+            let mut ticker = tokio::time::interval(std::time::Duration::from_millis(1000));
             loop {
                 ticker.tick().await;
                 let status = gstpop_runtime::embedded_status();
@@ -143,7 +146,8 @@ impl BackendLifecycle {
                 let externally = status.externally_owned;
                 let _ = poll_weak.upgrade_in_event_loop(move |ui| {
                     let b = ui.global::<crate::Bridge>();
-                    if ui.global::<crate::PanelBridge>().get_active() != crate::Panel::MediaBackend {
+                    if ui.global::<crate::PanelBridge>().get_active() != crate::Panel::MediaBackend
+                    {
                         return;
                     }
                     b.set_gstpop_service_state(state_str.into());
@@ -155,8 +159,7 @@ impl BackendLifecycle {
         // ── Migration runtime: 1Hz status poller ──────────────────────────────────
         let poll_mig_weak = ui.as_weak();
         tokio::spawn(async move {
-            let mut ticker =
-                tokio::time::interval(std::time::Duration::from_millis(1000));
+            let mut ticker = tokio::time::interval(std::time::Duration::from_millis(1000));
             loop {
                 ticker.tick().await;
                 let state_str: &'static str = match crate::migration_service::query_status() {
@@ -173,7 +176,8 @@ impl BackendLifecycle {
                 };
                 let _ = poll_mig_weak.upgrade_in_event_loop(move |ui| {
                     let b = ui.global::<crate::Bridge>();
-                    if ui.global::<crate::PanelBridge>().get_active() != crate::Panel::MediaBackend {
+                    if ui.global::<crate::PanelBridge>().get_active() != crate::Panel::MediaBackend
+                    {
                         return;
                     }
                     b.set_migration_runtime_service_state(state_str.into());
@@ -181,10 +185,15 @@ impl BackendLifecycle {
                     // active backend — poller is the single source of truth.
                     if b.get_media_backend() == crate::MediaBackendKind::Migration {
                         let (mbs, text): (crate::MediaBackendState, &str) = match state_str {
-                            "running"  => (crate::MediaBackendState::Ready,        "Migration runtime running"),
-                            "starting" => (crate::MediaBackendState::Starting,     ""),
-                            "error"    => (crate::MediaBackendState::Error,        ""),
-                            _          => (crate::MediaBackendState::Disconnected, "Migration runtime stopped"),
+                            "running" => {
+                                (crate::MediaBackendState::Ready, "Migration runtime running")
+                            }
+                            "starting" => (crate::MediaBackendState::Starting, ""),
+                            "error" => (crate::MediaBackendState::Error, ""),
+                            _ => (
+                                crate::MediaBackendState::Disconnected,
+                                "Migration runtime stopped",
+                            ),
                         };
                         b.set_media_backend_state(mbs);
                         b.set_media_backend_status_text(text.into());
@@ -277,14 +286,22 @@ impl BackendLifecycle {
 fn build_backend(stored: &StoredBackendConfig) -> Arc<dyn MediaBackend> {
     match stored.kind {
         BackendKind::Migration => Arc::new(MigrationBackend::new()),
-        BackendKind::GstPop => Arc::new(GstPopBackend::new(
-            stored.gstpop_url.clone(),
-            stored
-                .gstpop_api_key
-                .clone()
-                .filter(|value| !value.is_empty()),
-            stored.gstpop_pipeline_id.clone(),
-        )),
+        BackendKind::GstPop => {
+            let api_key = stored
+                .gstpop_api_key_alias
+                .as_deref()
+                .filter(|alias| !alias.is_empty())
+                .and_then(|alias| {
+                    crate::app::try_app()
+                        .and_then(|a| a.secrets().get(alias).ok())
+                        .and_then(|bytes| bytes.as_str().map(|s| s.to_owned()).ok())
+                });
+            Arc::new(GstPopBackend::new(
+                stored.gstpop_url.clone(),
+                api_key,
+                stored.gstpop_pipeline_id.clone(),
+            ))
+        }
     }
 }
 
@@ -294,7 +311,17 @@ fn push_config(weak: &Weak<MainWindow>, config: &StoredBackendConfig) {
         let bridge = ui.global::<crate::Bridge>();
         bridge.set_media_backend(into_slint(config.kind));
         bridge.set_gstpop_url(config.gstpop_url.into());
-        bridge.set_gstpop_api_key(config.gstpop_api_key.unwrap_or_default().into());
+        let api_key = config
+            .gstpop_api_key_alias
+            .as_deref()
+            .filter(|alias| !alias.is_empty())
+            .and_then(|alias| {
+                crate::app::try_app()
+                    .and_then(|a| a.secrets().get(alias).ok())
+                    .and_then(|bytes| bytes.as_str().map(|s| s.to_owned()).ok())
+            })
+            .unwrap_or_default();
+        bridge.set_gstpop_api_key(api_key.into());
         bridge.set_gstpop_pipeline_id(config.gstpop_pipeline_id.into());
         bridge.set_media_backend_state(crate::MediaBackendState::Disconnected);
         bridge.set_media_backend_status_text("".into());
@@ -308,11 +335,31 @@ fn read_config_from_bridge(weak: &Weak<MainWindow>) -> StoredBackendConfig {
     };
     let bridge = ui.global::<crate::Bridge>();
     let api_key = bridge.get_gstpop_api_key().to_string();
+
+    let alias = if !api_key.is_empty() {
+        let name = "gstpop.api_key.v1";
+        if let Some(app) = crate::app::try_app() {
+            let _ = app.secrets().put(name, api_key.as_bytes());
+        }
+        Some(name.to_owned())
+    } else {
+        None
+    };
+
     StoredBackendConfig {
         kind: from_slint(bridge.get_media_backend()),
         gstpop_url: bridge.get_gstpop_url().to_string(),
-        gstpop_api_key: (!api_key.is_empty()).then_some(api_key),
+        gstpop_api_key_alias: alias,
         gstpop_pipeline_id: bridge.get_gstpop_pipeline_id().to_string(),
+        gstpop_api_key: None,
+        ..{
+            let cfg = crate::config::load();
+            StoredBackendConfig {
+                camera_rtmp: cfg.camera_rtmp,
+                global_camera: cfg.global_camera,
+                ..Default::default()
+            }
+        }
     }
 }
 
@@ -379,12 +426,13 @@ mod tests {
 
     #[test]
     fn test_switch_media_backend_to_gstpop_integration() {
+        crate::app::init(crate::app::App::production());
+        use futures_util::{SinkExt, StreamExt};
+        use serde_json::{json, Value};
         use std::sync::Mutex as StdMutex;
         use tokio::net::TcpListener;
         use tokio_tungstenite::accept_hdr_async;
         use tokio_tungstenite::tungstenite::Message;
-        use futures_util::{SinkExt, StreamExt};
-        use serde_json::{json, Value};
 
         // Create a multi-threaded tokio runtime for background tasks
         let rt = tokio::runtime::Builder::new_multi_thread()
@@ -397,7 +445,9 @@ mod tests {
         i_slint_backend_testing::init_integration_test_with_mock_time();
 
         // 2. Start mock WebSocket server on an ephemeral port
-        let listener = rt.block_on(async { TcpListener::bind("127.0.0.1:0").await }).unwrap();
+        let listener = rt
+            .block_on(async { TcpListener::bind("127.0.0.1:0").await })
+            .unwrap();
         let port = listener.local_addr().unwrap().port();
         let mock_url = format!("ws://127.0.0.1:{port}");
 
@@ -465,7 +515,10 @@ mod tests {
             }
 
             // 7. Verify the bridge is initially connected/ready as Migration
-            assert_eq!(bridge.get_media_backend(), crate::MediaBackendKind::Migration);
+            assert_eq!(
+                bridge.get_media_backend(),
+                crate::MediaBackendKind::Migration
+            );
 
             // 8. Simulate UI page switching to gst-pop and entering configuration
             bridge.set_media_backend(crate::MediaBackendKind::GstPop);
@@ -492,13 +545,17 @@ mod tests {
                 bridge.get_media_backend_status_text().as_str(),
                 "gst-pop v1.2.3 - 2 pipeline(s)"
             );
-            assert!(*auth_ok_check.lock().unwrap(), "Authorization header was missing or incorrect");
+            assert!(
+                *auth_ok_check.lock().unwrap(),
+                "Authorization header was missing or incorrect"
+            );
 
             // 11. Clean up
             let _ = current().shutdown().await;
 
             slint::quit_event_loop().unwrap();
-        }).unwrap();
+        })
+        .unwrap();
 
         slint::run_event_loop().unwrap();
     }

@@ -20,7 +20,9 @@ mod android {
             .context("getClassLoader")?
             .l()
             .context("getClassLoader result")?;
-        let jname = env.new_string(class_name).context("new_string class name")?;
+        let jname = env
+            .new_string(class_name)
+            .context("new_string class name")?;
         let class = env
             .call_method(
                 &loader,
@@ -42,7 +44,10 @@ pub fn request_service_start(config: &StoredBackendConfig) -> anyhow::Result<()>
     use jni::objects::JValue;
 
     let ctx = crate::android_context().context("android_context")?;
-    let mut env = ctx.vm.attach_current_thread().context("attach_current_thread")?;
+    let mut env = ctx
+        .vm
+        .attach_current_thread()
+        .context("attach_current_thread")?;
     let config_json = serde_json::to_string(config).context("serialize StoredBackendConfig")?;
     let jconfig = env.new_string(config_json).context("new_string(config)")?;
     let bridge = android::load_app_class(
@@ -72,7 +77,10 @@ pub fn request_service_stop() {
 
     if let Ok(ctx) = crate::android_context() {
         let _ = (|| -> anyhow::Result<()> {
-            let mut env = ctx.vm.attach_current_thread().context("attach_current_thread")?;
+            let mut env = ctx
+                .vm
+                .attach_current_thread()
+                .context("attach_current_thread")?;
             let bridge = android::load_app_class(
                 &mut env,
                 &ctx.activity,

@@ -1,21 +1,14 @@
-// settings_page.slint — Pre-cast quality selection screen.
-// Shown when AppState == SelectingSettings.
+// settings_page.slint — Pre-cast quality selection screen (SettingsPageView)
+// and the full Moblin-style settings overlay (FullSettingsPage).
 //
-// Renamed from SelectingSettingsView → SettingsPageView to avoid collision
-// with the full FullSettingsPage component added in Phase 7.
-//
-// MainWindow in main.slint references SettingsPageView.  The Rust side uses
-// AppState::SelectingSettings (unchanged) — no Rust changes needed here.
-//
-// Shared settings widgets are vendored locally from the monorepo's mcore UI.
+// SettingsPageView: shown when AppState == SelectingSettings.
+// FullSettingsPage: panel overlay reachable via PanelBridge.push(Panel.settings).
 
-// Phase 7 adds FullSettingsPage in this same file.  It is a UI-only panel
-// reachable from `PanelBridge.active == Panel.settings`.  All controls
-// flip inline `in-out` properties on the page itself — no Rust round-trip.
-
-import { VerticalBox, ScrollView } from "std-widgets.slint";
+import { Spinner } from "std-widgets.slint";
+import { Input } from "../slintcn/components/input.slint";
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
 import { Utils, VideoResolutionPicker, FrameratePicker } from "../components/mcore/common.slint";
-import { Bridge, Panel, LifecycleMode, MediaBackendKind } from "../bridge.slint";
+import { Bridge, Panel, LifecycleMode, MediaBackendKind, AppState } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
 import { PrimaryButton, DestructiveButton, TextButton } from "../components/buttons.slint";
@@ -23,6 +16,8 @@ import {
     SettingsSection,
     SettingsValueRow,
     SettingsToggleRow,
+    SettingsTextRow,
+    RowColors,
 } from "../components/settings_rows.slint";
 import { PanelHeader } from "../components/panel_chrome.slint";
 
@@ -30,7 +25,9 @@ export component SettingsPageView inherits Rectangle {
     property <int> video-resolution-idx: 2;
     property <int> video-framerate-idx: 2;
 
-    VerticalBox {
+    VerticalLayout {
+        padding: 8px;
+        spacing: 8px;
         Text {
             font-size: Theme.font-size-body;
             vertical-alignment: center;
@@ -67,136 +64,308 @@ export component SettingsPageView inherits Rectangle {
 }
 
 export component FullSettingsPage inherits Rectangle {
-    // ── UI-only stub state ───────────────────────────────────────────────
-    // All flips live on this component. Phase 8 swaps these for Bridge
-    // setters + Rust-backed handlers.
-    in-out property <int>    resolution-idx: 2;
-    in-out property <int>    framerate-idx:  2;
-    in-out property <bool>   mdns-enabled:   true;
+    in-out property <int>  resolution-idx: 2;
+    in-out property <int>  framerate-idx:  2;
+    in-out property <bool> mdns-enabled:   true;
 
-    // Fill the parent (overlay layer in main.slint passes parent.width/height).
     width: 100%;
     height: 100%;
-    background: Theme.surface-primary;
+    background: transparent;
 
     VerticalLayout {
-        // ── Header ────────────────────────────────────────────────────────
+        // ── Header ────────────────────────────────────────────────────────────
         PanelHeader {
             title: @tr("Settings");
             close-clicked => { PanelBridge.pop(); }
         }
 
-        // ── Body (scrollable) ─────────────────────────────────────────────
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        // ── Body (scrollable) ─────────────────────────────────────────────────
+        ScrollArea {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
                 alignment: start;
-                spacing: Theme.spacing-default;
+                spacing: Theme.spacing-loose;
                 padding: Theme.padding-screen;
 
-                // ── Section: PRIVACY ──────────────────────────────────────
+                // ── Section: STREAM ───────────────────────────────────────────
                 SettingsSection {
-                    title: @tr("PRIVACY");
+                    title: @tr("STREAM");
                     SettingsValueRow {
-                        title: @tr("Lock UI");
-                        value: @tr("Enter");
-                        clicked => { Bridge.engage-lock(); }
+                        icon: "🪄";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Stream Wizard");
+                        value: @tr("Quick start via QR");
+                        clicked => { PanelBridge.push(Panel.rtmp-wizard); }
                     }
                     SettingsValueRow {
-                        title: @tr("Stealth mode");
-                        value: @tr("Enter");
-                        clicked => { Bridge.engage-stealth(); }
+                        icon: "📷";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Camera");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.camera); }
                     }
                     SettingsValueRow {
-                        title: @tr("Cast with countdown");
-                        value: @tr("{}s", Bridge.snapshot-secs);
-                        clicked => {
-                            Bridge.start-snapshot-countdown(Bridge.snapshot-secs);
-                        }
+                        icon: "🎧";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Audio");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.audio); }
+                    }
+                    SettingsValueRow {
+                        icon: "📊";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Bitrate");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.bitrate-presets); }
+                    }
+                    SettingsValueRow {
+                        icon: "🎛️";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Mixer");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.mixer); }
+                    }
+                    SettingsValueRow {
+                        icon: "🌐";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Network");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.network); }
+                    }
+                    SettingsValueRow {
+                        icon: "📡";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Camera RTMP Stream");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.camera-rtmp-stream); }
+                    }
+                    SettingsValueRow {
+                        icon: "📺";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Max resolution");
+                        value: ["480p", "720p", "1080p", "1440p"][Math.clamp(root.resolution-idx, 0, 3)];
+                        clicked => { root.resolution-idx = Math.mod(root.resolution-idx + 1, 4); }
+                    }
+                    SettingsValueRow {
+                        icon: "⏱";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Max framerate");
+                        value: ["24 fps", "30 fps", "60 fps"][Math.clamp(root.framerate-idx, 0, 2)];
+                        clicked => { root.framerate-idx = Math.mod(root.framerate-idx + 1, 3); }
                     }
                 }
 
-                // ── Section: RECEIVER ─────────────────────────────────────
+                // ── Section: RECEIVER ─────────────────────────────────────────
                 SettingsSection {
                     title: @tr("RECEIVER");
+
+                    // Device list shown only when disconnected.
+                    if Bridge.app-state == AppState.Disconnected: VerticalLayout {
+                        spacing: Theme.spacing-default;
+                        padding-left:  Theme.padding-screen;
+                        padding-right: Theme.padding-screen;
+                        padding-top:   Theme.spacing-default;
+                        padding-bottom: Theme.spacing-default;
+
+                        if Bridge.devices.length == 0: Rectangle {
+                            height: 64px;
+                            border-radius: Theme.radius-card;
+                            background: #ffffff0d;
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: Theme.spacing-default;
+                                Spinner { indeterminate: true; width: 20px; height: 20px; }
+                                Text {
+                                    text: @tr("Searching for receivers…");
+                                    color: Theme.text-secondary;
+                                    font-size: Theme.font-size-body;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        if Bridge.devices.length > 0: VerticalLayout {
+                            spacing: 1px;
+                            for device in Bridge.devices: Rectangle {
+                                height: Theme.row-height;
+                                background: dev-ta.pressed ? RowColors.pressed : RowColors.normal;
+                                dev-ta := TouchArea {
+                                    clicked => { Bridge.connect-receiver(device.id); PanelBridge.pop(); }
+                                }
+                                HorizontalLayout {
+                                    padding-left:  Theme.padding-screen;
+                                    padding-right: Theme.padding-screen;
+                                    alignment: center;
+                                    spacing: Theme.spacing-default;
+                                    Rectangle {
+                                        width: 28px; height: 28px;
+                                        border-radius: Theme.radius-pill;
+                                        background: Theme.icon-bg-neutral;
+                                        Text {
+                                            text: "◉";
+                                            font-size: Theme.font-size-icon;
+                                            color: Theme.text-primary;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        alignment: center;
+                                        Text {
+                                            text: device.name;
+                                            color: Theme.text-primary;
+                                            font-size: Theme.font-size-body;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: device.address;
+                                            color: Theme.text-secondary;
+                                            font-size: Theme.font-size-label;
+                                            overflow: elide;
+                                        }
+                                    }
+                                    Text {
+                                        text: "›";
+                                        color: Theme.text-secondary;
+                                        font-size: Theme.font-size-heading;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        ip-field := Input {
+                            placeholder: @tr("Receiver IP address");
+                        }
+                        PrimaryButton {
+                            label: @tr("Connect");
+                            enabled: ip-field.text != "";
+                            clicked => {
+                                Bridge.connect-receiver(ip-field.text);
+                                PanelBridge.pop();
+                            }
+                        }
+                    }
+
                     SettingsValueRow {
-                        title: @tr("Discovered receivers");
-                        value: @tr("{n} receiver found" | "{n} receivers found" % Bridge.devices.length);
-                        // UI-only — would open the connect page.
-                        clicked => { /* placeholder */ }
+                        icon: "📲";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Pair via QR");
+                        clicked => { PanelBridge.push(Panel.pairing); }
                     }
                     SettingsToggleRow {
+                        icon: "🌐";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("mDNS discovery");
                         checked: root.mdns-enabled;
                         toggled(checked) => { root.mdns-enabled = checked; }
                     }
                 }
 
-                // ── Section: AUDIO & VIDEO ────────────────────────────────
-                // Cycle-on-click is a placeholder UX. Real picker panels
-                // land in `futures/`.
+                // ── Section: RECORDING ────────────────────────────────────────
                 SettingsSection {
-                    title: @tr("AUDIO & VIDEO");
+                    title: @tr("RECORDING");
                     SettingsValueRow {
-                        title: @tr("Audio");
+                        icon: "🔴";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Recording");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.audio); }
+                        clicked => { PanelBridge.push(Panel.recording); }
                     }
                     SettingsValueRow {
-                        title: @tr("Bitrate");
+                        icon: "📜";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Cast history");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.bitrate-presets); }
-                    }
-                    SettingsValueRow {
-                        title: @tr("Camera");
-                        value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.camera); }
-                    }
-                    SettingsValueRow {
-                        title: @tr("Max resolution");
-                        value: ["480p", "720p", "1080p", "1440p"][Math.clamp(root.resolution-idx, 0, 3)];
-                        clicked => {
-                            root.resolution-idx = Math.mod(root.resolution-idx + 1, 4);
-                        }
-                    }
-                    SettingsValueRow {
-                        title: @tr("Max framerate");
-                        value: ["24 fps", "30 fps", "60 fps"][Math.clamp(root.framerate-idx, 0, 2)];
-                        clicked => {
-                            root.framerate-idx = Math.mod(root.framerate-idx + 1, 3);
-                        }
+                        clicked => { PanelBridge.push(Panel.cast-history); }
                     }
                 }
 
-                // ── Section: DISPLAY ──────────────────────────────────────
+                // ── Section: DISPLAY ──────────────────────────────────────────
                 SettingsSection {
                     title: @tr("DISPLAY");
                     SettingsValueRow {
+                        icon: "⋯";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Quick actions");
                         value: @tr("open-panel-action" => "Open");
                         clicked => { PanelBridge.push(Panel.quick-actions); }
                     }
                 }
 
-                // ── Section: CODEC & DEBUG ────────────────────────────────
+                // ── Section: PRIVACY ──────────────────────────────────────────
                 SettingsSection {
-                    title: @tr("CODEC & DEBUG");
+                    title: @tr("PRIVACY");
                     SettingsValueRow {
+                        icon: "🔒";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Lock UI");
+                        value: @tr("Enter");
+                        clicked => { Bridge.engage-lock(); }
+                    }
+                    SettingsValueRow {
+                        icon: "🕵️";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Stealth mode");
+                        value: @tr("Enter");
+                        clicked => { Bridge.engage-stealth(); }
+                    }
+                    SettingsValueRow {
+                        icon: "⏱";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Cast with countdown");
+                        value: @tr("{}s", Bridge.snapshot-secs);
+                        clicked => { Bridge.start-snapshot-countdown(Bridge.snapshot-secs); }
+                    }
+                }
+
+                // ── Section: AUTOMATION ───────────────────────────────────────
+                SettingsSection {
+                    title: @tr("AUTOMATION");
+                    SettingsValueRow {
+                        icon: "▶️";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Macros");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.macros); }
+                    }
+                }
+
+                // ── Section: DEBUG ────────────────────────────────────────────
+                SettingsSection {
+                    title: @tr("DEBUG");
+                    SettingsValueRow {
+                        icon: "🧪";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("H.264 encoder test");
                         value: @tr("open-panel-action" => "Open");
                         clicked => { PanelBridge.push(Panel.codec-test); }
                     }
                     SettingsValueRow {
+                        icon: "⚡";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Codec performance test");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.codec-perf); }
+                    }
+                    SettingsValueRow {
+                        icon: "📋";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Debug log");
                         value: @tr("open-panel-action" => "Open");
                         clicked => { PanelBridge.push(Panel.debug-log); }
                     }
                     SettingsValueRow {
+                        icon: "📽️";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Video pipeline");
                         value: @tr("open-panel-action" => "Open");
                         clicked => { PanelBridge.push(Panel.debug-video); }
                     }
                     SettingsValueRow {
+                        icon: "⚡";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Media backend");
                         value: Bridge.media-backend == MediaBackendKind.migration
                             ? @tr("Migration (in-process)")
@@ -204,66 +373,38 @@ export component FullSettingsPage inherits Rectangle {
                         clicked => { PanelBridge.push(Panel.media-backend); }
                     }
                     SettingsValueRow {
-                        title: @tr("Test Functionality");
-                        value: "";
+                        icon: "⚠️";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Test functionality");
                         clicked => { PanelBridge.push(Panel.test-functionality); }
                     }
                 }
 
-                // ── Section: DATA ─────────────────────────────────────────
+                // ── Section: DATA ─────────────────────────────────────────────
                 SettingsSection {
                     title: @tr("DATA");
                     SettingsValueRow {
+                        icon: "🔄";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Backup & reset");
                         value: @tr("open-panel-action" => "Open");
                         clicked => { PanelBridge.push(Panel.backup-reset); }
                     }
-                    SettingsValueRow {
-                        title: @tr("Cast history");
-                        value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.cast-history); }
-                    }
                 }
 
-                // ── Section: ADVANCED ─────────────────────────────────────
-                SettingsSection {
-                    title: @tr("ADVANCED");
-                    SettingsValueRow {
-                        title: @tr("Recording");
-                        value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.recording); }
-                    }
-                    SettingsValueRow {
-                        title: @tr("Network");
-                        value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.network); }
-                    }
-                    SettingsValueRow {
-                        title: @tr("Mixer");
-                        value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.mixer); }
-                    }
-                }
-
-                // ── Section: AUTOMATION ───────────────────────────────────
-                SettingsSection {
-                    title: @tr("AUTOMATION");
-                    SettingsValueRow {
-                        title: @tr("Macros");
-                        value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.macros); }
-                    }
-                }
-
-                // ── Section: ABOUT ────────────────────────────────────────
+                // ── Section: ABOUT ────────────────────────────────────────────
                 SettingsSection {
                     title: @tr("ABOUT");
                     SettingsValueRow {
+                        icon: "ℹ️";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("App version");
                         value: Bridge.app-version;
                         show-chevron: false;
                     }
                     SettingsValueRow {
+                        icon: "🌐";
+                        icon-bg: Theme.icon-bg-neutral;
                         title: @tr("FCast protocol");
                         value: "v3";
                         show-chevron: false;

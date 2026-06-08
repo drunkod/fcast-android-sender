@@ -37,6 +37,7 @@ GSTREAMER_PLUGINS := \
     audiorate \
     audioresample \
     audiotestsrc \
+    opensles \
     compositor \
     gio \
     rawparse \
@@ -64,7 +65,15 @@ GSTREAMER_PLUGINS := \
     nice \
     rsrtp \
     rsrtsp \
-    rswebrtc
+    rswebrtc \
+    flv \
+    rtmp2 \
+    rtmp \
+    x264 \
+    voaacenc \
+    isomp4 \
+    androidmedia \
+    videoparsersbad
 
 GSTREAMER_EXTRA_DEPS := \
     glib-2.0 \

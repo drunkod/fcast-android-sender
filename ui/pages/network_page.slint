@@ -7,11 +7,11 @@
 // Aware toggle for a real WifiAwareManager opt-in.
 //
 // Slint docs ref:
-//   draft/slint-ui/docs/astro/src/content/docs/reference/std-widgets/views/scrollview.mdx
 //   draft/slint-ui/docs/astro/src/content/docs/reference/timer.mdx
 //   draft/slint-ui/docs/astro/src/content/docs/guide/language/coding/repetition-and-data-models.mdx
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
 
-import { ScrollView } from "std-widgets.slint";
+
 import { Bridge, Panel, NetworkInterface, NetworkKind } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
@@ -168,9 +168,9 @@ export component NetworkPage inherits Rectangle {
         }
 
         // ── Body ────────────────────────────────────────────────────────
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        ScrollArea {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
                 alignment: start;
                 spacing: Theme.spacing-default;
                 padding: Theme.padding-screen;

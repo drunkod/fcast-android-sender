@@ -115,6 +115,7 @@ export enum Panel {
     settings,
     debug,
     codec-test,
+    codec-perf,
     backup-reset,
     audio,
     camera,
@@ -134,6 +135,8 @@ export enum Panel {
     mixer,
     media-backend,
     test-functionality,
+    camera-rtmp-stream,
+    rtmp-wizard,
 }
 
 export struct QuickAction {
@@ -283,8 +286,6 @@ export global Bridge {
     in-out property <float> camera-zoom-level: 1.0;
     in-out property <bool> wifi-aware-enabled: false;
     in-out property <string>   selected-history-id: "";
-    in-out property <bool>     show-debug: false;
-    in-out property <string>   test-status: "";
     in property <[QuickAction]> quick-actions: [];
     callback move-bar-action(int, int);
     callback set-bar-action-enabled(int, bool);
@@ -335,10 +336,6 @@ export global Bridge {
     callback exit-lifecycle();
     callback set-wifi-aware(bool);
 
-    // ── Migration-runtime callbacks (MVP-PHASE-9) ───────────────────────
-    callback start-migration-server(string); // (bind-addr)
-    callback run-migration-test(string); // (test-id: "getinfo" | "crossfade" | "smoke")
-    callback stop-migration-server();
 
     // ── Media backend selector callbacks (MVP-PHASE-12) ────────────────
     callback save-media-backend-settings();
@@ -409,6 +406,23 @@ export global Bridge {
     // (width-px, height-px, sample-rate-hz)
     callback apply-mixer-canvas(int, int, int);
 
+    // ── Camera RTMP stream (new page) ─────────────────────────────────
+    in-out property <string> cam-rtmp-url:             "";
+    in-out property <string> cam-rtmp-stream-key:      "";
+    in property      <MixerState> cam-rtmp-state:      MixerState.idle;
+    in property      <string>     cam-rtmp-error-text: "";
+    in property      <bool>       cam-rtmp-camera-permission: false;
+
+    callback start-camera-rtmp-stream();
+    callback stop-camera-rtmp-stream();
+    callback start-camera-rtmp-preview();
+    callback request-cam-rtmp-camera-permission();
+    callback save-cam-rtmp-config();
+    pure callback url-looks-valid(string) -> bool;
+    // Stream wizard: scan QR to auto-configure RTMP URL + key then go live.
+    callback scan-rtmp-qr();
+    in-out property <bool> rtmp-qr-scanning: false;
+
     // ── Test functionality (test-functionality panel) ────────────────────
     in-out property <int>    test-camera-idx:           1;
     in-out property <int>    test-resolution-idx:       2;
@@ -450,4 +464,27 @@ export global Bridge {
     public function change-state(to: AppState) {
         Bridge.app-state = to;
     }
+
+    // ── Codec test (Phase 8 wiring) ──────────────────────────────────────
+    in property <string> codec-test-log: "";
+    // Same report split into lines so the page can render it in a virtualised
+    // ListView — a single huge Text in a Flickable janks on scroll.
+    in property <[string]> codec-test-log-lines: [];
+    in property <bool>   codec-test-running: false;
+    callback run-codec-test();        // full dump + quick-find + smoke test
+    callback run-codec-dump-only();   // just the codec list dump (faster)
+    callback run-codec-smoke-only();  // just the encoder smoke test
+    callback save-codec-log();        // write the current report to a file
+    // Result of the last save — absolute path on success, or an error string.
+    in property <string> codec-test-save-status: "";
+
+    // ── Codec performance benchmark (GStreamer pipeline throughput) ───────
+    in property <string> perf-test-log: "";
+    // Same report split into lines for a virtualised ListView (smooth scroll).
+    in property <[string]> perf-test-log-lines: [];
+    in property <bool>   perf-test-running: false;
+    callback run-perf-test();
+    callback run-perf-encode-only();
+    callback run-perf-decode-only();
+    callback run-perf-list-factories();
 }

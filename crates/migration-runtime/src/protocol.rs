@@ -18,6 +18,30 @@ fn default_capture_fps() -> u32 {
     30
 }
 
+fn default_camera_idx() -> u32 {
+    1
+}
+
+fn default_camera_width() -> u32 {
+    1920
+}
+
+fn default_camera_height() -> u32 {
+    1080
+}
+
+fn default_camera_fps() -> u32 {
+    30
+}
+
+fn default_camera_zoom() -> f32 {
+    1.0
+}
+
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ControlMode {
@@ -68,6 +92,26 @@ pub enum Command {
         height: u32,
         #[serde(default = "default_capture_fps")]
         fps: u32,
+    },
+    /// Camera source — captures from the Android Camera2 API via the
+    /// CAMERA_FRAME_PAIR global (populated by JNI from the Kotlin coordinator).
+    #[serde(rename = "createcamerasource")]
+    CreateCameraSource {
+        id: String,
+        #[serde(default = "default_camera_idx")]
+        camera_idx: u32,
+        #[serde(default = "default_camera_width")]
+        width: u32,
+        #[serde(default = "default_camera_height")]
+        height: u32,
+        #[serde(default = "default_camera_fps")]
+        fps: u32,
+        #[serde(default)]
+        mirror: bool,
+        #[serde(default = "default_true")]
+        stabilization: bool,
+        #[serde(default = "default_camera_zoom")]
+        zoom: f32,
     },
     CreateDestination {
         id: String,
@@ -442,6 +486,96 @@ mod tests {
                 height: 1080,
                 fps: 60,
             } if id == "cap-1"
+        ));
+    }
+
+    #[test]
+    fn camera_command_deserialises() {
+        let cmd: Command = serde_json::from_str(
+            r#"{"createcamerasource":{"id":"cam-1","camera_idx":2,"width":1280,"height":720,"fps":30,"mirror":true,"stabilization":false,"zoom":2.5}}"#,
+        )
+        .unwrap();
+
+        match cmd {
+            Command::CreateCameraSource {
+                id,
+                camera_idx,
+                width,
+                height,
+                fps,
+                mirror,
+                stabilization,
+                zoom,
+            } => {
+                assert_eq!(id, "cam-1");
+                assert_eq!(camera_idx, 2);
+                assert_eq!(width, 1280);
+                assert_eq!(height, 720);
+                assert_eq!(fps, 30);
+                assert!(mirror);
+                assert!(!stabilization);
+                assert_eq!(zoom, 2.5);
+            }
+            other => panic!("expected CreateCameraSource, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn camera_command_uses_defaults_when_omitted() {
+        let cmd: Command =
+            serde_json::from_str(r#"{"createcamerasource":{"id":"cam-1"}}"#).unwrap();
+
+        match cmd {
+            Command::CreateCameraSource {
+                id,
+                camera_idx,
+                width,
+                height,
+                fps,
+                mirror,
+                stabilization,
+                zoom,
+            } => {
+                assert_eq!(id, "cam-1");
+                assert_eq!(camera_idx, 1);
+                assert_eq!(width, 1920);
+                assert_eq!(height, 1080);
+                assert_eq!(fps, 30);
+                assert!(!mirror);
+                assert!(stabilization);
+                assert_eq!(zoom, 1.0);
+            }
+            other => panic!("expected CreateCameraSource, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn camera_command_roundtrips() {
+        let cmd = Command::CreateCameraSource {
+            id: "cam-1".into(),
+            camera_idx: 1,
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            mirror: true,
+            stabilization: false,
+            zoom: 1.5,
+        };
+
+        let json = serde_json::to_string(&cmd).unwrap();
+        let parsed: Command = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            parsed,
+            Command::CreateCameraSource {
+                ref id,
+                camera_idx: 1,
+                width: 1920,
+                height: 1080,
+                fps: 30,
+                mirror: true,
+                stabilization: false,
+                zoom,
+            } if id == "cam-1" && (zoom - 1.5).abs() < f32::EPSILON
         ));
     }
 

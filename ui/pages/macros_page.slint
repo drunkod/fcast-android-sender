@@ -7,10 +7,10 @@
 // blank draft, then open Panel.macro-edit.
 //
 // Slint docs ref:
-//   draft/slint-ui/docs/astro/src/content/docs/reference/std-widgets/views/scrollview.mdx
 //   draft/slint-ui/docs/astro/src/content/docs/guide/language/coding/repetition-and-data-models.mdx
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
 
-import { ScrollView } from "std-widgets.slint";
+
 import { Bridge, Panel, Macro, MacroStep } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
@@ -28,9 +28,9 @@ export component MacrosPage inherits Rectangle {
             close-clicked => { PanelBridge.pop(); }
         }
 
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        ScrollArea {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
                 alignment: start;
                 spacing: Theme.spacing-default;
                 padding: Theme.padding-screen;

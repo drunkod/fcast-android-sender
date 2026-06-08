@@ -9,10 +9,9 @@
 // Bridge.save-macro.
 //
 // Slint docs ref:
-//   draft/slint-ui/docs/astro/src/content/docs/reference/std-widgets/views/lineedit.mdx
-//   draft/slint-ui/docs/astro/src/content/docs/reference/std-widgets/views/scrollview.mdx
 
-import { ScrollView, LineEdit } from "std-widgets.slint";
+import { Input } from "../slintcn/components/input.slint";
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
 import { Bridge, Panel, Macro, MacroStep, QuickActionKind } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
@@ -66,9 +65,9 @@ export component MacroEditPage inherits Rectangle {
             }
         }
 
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        ScrollArea {
+            content-height: main-content.preferred-height;
+            main-content := VerticalLayout {
                 alignment: start;
                 spacing: Theme.spacing-default;
                 padding: Theme.padding-screen;
@@ -79,9 +78,9 @@ export component MacroEditPage inherits Rectangle {
                     color: Theme.text-secondary;
                     font-size: Theme.font-size-label;
                 }
-                name-edit := LineEdit {
+                name-edit := Input {
                     text <=> Bridge.draft-macro-name;
-                    placeholder-text: @tr("Untitled macro");
+                    placeholder: @tr("Untitled macro");
                 }
 
                 // ── Enable toggle ───────────────────────────────────────
@@ -228,9 +227,9 @@ export component MacroEditPage inherits Rectangle {
                     color: Theme.text-primary;
                     font-size: Theme.font-size-heading;
                 }
-                ScrollView {
-                    mouse-drag-pan-enabled: true;
-                    VerticalLayout {
+                ScrollArea {
+                    content-height: action-content.preferred-height;
+                    action-content := VerticalLayout {
                         spacing: 4px;
                         for action in root.available-actions: Rectangle {
                             height: 40px;

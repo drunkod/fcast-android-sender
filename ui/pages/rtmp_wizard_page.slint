@@ -1,0 +1,214 @@
+// rtmp_wizard_page.slint — Quick-Start RTMP stream wizard.
+//
+// Two-path setup:
+//   QR path  — scan a QR code that encodes the RTMP URL + stream key;
+//              Rust parses it, populates cam-rtmp-url / cam-rtmp-stream-key,
+//              and auto-starts the stream (if camera permission granted).
+//   Manual   — opens Panel.camera-rtmp-stream for full settings.
+//
+// QR payload formats supported by Rust parser:
+//   JSON    — {"url":"rtmp://…","key":"live_…"}
+//   Full URL— rtmp://server/app/stream_key  (splits on last '/')
+
+import { Theme } from "../theme.slint";
+import { Bridge, Panel } from "../bridge.slint";
+import { PanelBridge } from "../state/panel_bridge.slint";
+import { PrimaryButton } from "../components/buttons.slint";
+import { PanelHeader } from "../components/panel_chrome.slint";
+import { RowColors } from "../components/settings_rows.slint";
+
+// ── OptionCard ────────────────────────────────────────────────────────────────
+// Tappable card — icon (large), title, description, action button.
+component OptionCard inherits Rectangle {
+    in property <string> icon;
+    in property <color>  icon-color: Theme.accent;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> button-label;
+    in property <bool>   button-enabled: true;
+    in property <bool>   button-loading: false;
+    callback action();
+
+    border-radius: Theme.radius-card;
+    background: Theme.surface-card;
+    drop-shadow-blur:  Theme.elevation-2-blur;
+    drop-shadow-color: Theme.scrim-light;
+
+    VerticalLayout {
+        padding-left: Theme.padding-screen;
+        padding-right: Theme.padding-screen;
+        padding-top: Theme.spacing-loose;
+        padding-bottom: Theme.spacing-loose;
+        spacing: Theme.spacing-default;
+        alignment: center;
+
+        // Icon
+        Text {
+            text: root.icon;
+            color: root.icon-color;
+            font-size: Theme.font-size-display;
+            horizontal-alignment: center;
+        }
+
+        // Title
+        Text {
+            text: root.title;
+            color: Theme.text-primary;
+            font-size: Theme.font-size-heading;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        // Subtitle
+        Text {
+            text: root.subtitle;
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-body;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        // Action button or loading indicator
+        if !root.button-loading: PrimaryButton {
+            label: root.button-label;
+            enabled: root.button-enabled;
+            clicked => { root.action(); }
+        }
+
+        if root.button-loading: HorizontalLayout {
+            alignment: center;
+            spacing: Theme.spacing-default;
+            Text {
+                text: "⏳";
+                color: Theme.accent;
+                font-size: 14pt;
+                vertical-alignment: center;
+                // Pulse animation via opacity states
+                animate opacity { duration: 600ms; easing: ease-in-out; }
+            }
+            Text {
+                text: @tr("Scanning for QR code…");
+                color: Theme.text-secondary;
+                font-size: Theme.font-size-body;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// ── RtmpStreamWizardPage ──────────────────────────────────────────────────────
+export component RtmpStreamWizardPage inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+
+    forward-focus: scope;
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) { PanelBridge.pop(); return accept; }
+            return reject;
+        }
+
+        VerticalLayout {
+            // ── Header ────────────────────────────────────────────────────────
+            PanelHeader {
+                title: @tr("Stream Wizard");
+                close-clicked => {
+                    // Reset scanning flag if the user dismisses mid-scan.
+                    Bridge.rtmp-qr-scanning = false;
+                    PanelBridge.pop();
+                }
+            }
+
+            // ── Body ──────────────────────────────────────────────────────────
+            VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+                padding-left: Theme.padding-screen;
+                padding-right: Theme.padding-screen;
+                padding-top: Theme.padding-screen;
+                padding-bottom: Theme.padding-screen;
+                spacing: Theme.spacing-default;
+
+                // ── QR path card ──────────────────────────────────────────────
+                OptionCard {
+                    icon: "🔍";
+                    icon-color: Theme.text-primary;
+                    title: @tr("Scan QR Code");
+                    subtitle: @tr("Point the camera at a QR code containing your RTMP stream URL and key. The stream will start automatically.");
+                    button-label: @tr("Scan QR");
+                    button-enabled: !Bridge.rtmp-qr-scanning;
+                    button-loading: Bridge.rtmp-qr-scanning;
+                    action => {
+                        Bridge.scan-rtmp-qr();
+                    }
+                }
+
+                // ── Divider ───────────────────────────────────────────────────
+                HorizontalLayout {
+                    spacing: Theme.spacing-default;
+                    alignment: center;
+                    padding-top: Theme.spacing-tight;
+                    padding-bottom: Theme.spacing-tight;
+                    Rectangle {
+                        height: 1px;
+                        background: RowColors.divider;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 0;
+                    }
+                    Text {
+                        text: @tr("or");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        vertical-alignment: center;
+                    }
+                    Rectangle {
+                        height: 1px;
+                        background: RowColors.divider;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 0;
+                    }
+                }
+
+                // ── Manual path card ──────────────────────────────────────────
+                OptionCard {
+                    icon: "⚙️";
+                    icon-color: Theme.accent;
+                    title: @tr("Set Up Manually");
+                    subtitle: @tr("Enter your RTMP server URL and stream key manually. Use this if you don't have a QR code.");
+                    button-label: @tr("Configure settings");
+                    action => {
+                        PanelBridge.replace(Panel.camera-rtmp-stream);
+                    }
+                }
+
+                // ── QR format hint ────────────────────────────────────────────
+                Rectangle {
+                    border-radius: Theme.radius-card;
+                    background: RowColors.normal;
+                    min-height: 56px;
+
+                    VerticalLayout {
+                        padding-left: Theme.padding-screen;
+                        padding-right: Theme.padding-screen;
+                        padding-top: Theme.padding-screen;
+                        padding-bottom: Theme.padding-screen;
+                        spacing: Theme.spacing-tight;
+                        Text {
+                            text: @tr("QR code format");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                            font-weight: 600;
+                        }
+                        Text {
+                            text: "JSON:  {\"url\":\"rtmp://…\",\"key\":\"live_…\"}\nURL:   rtmp://server/app/stream_key";
+                            color: Theme.text-disabled;
+                            font-size: 8pt;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

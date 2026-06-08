@@ -10,8 +10,9 @@
 //   draft/slint-ui/docs/astro/src/content/docs/reference/timer.mdx
 //   draft/slint-ui/docs/astro/src/content/docs/reference/global-functions/math.mdx
 //   draft/slint-ui/docs/astro/src/content/docs/guide/language/coding/expressions-and-statements.mdx
+import { ScrollArea } from "../slintcn/components/scroll-area.slint";
 
-import { ScrollView } from "std-widgets.slint";
+
 import { Bridge, Panel, RecordingState } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Recording } from "../state/recording.slint";
@@ -81,9 +82,9 @@ export component RecordingPage inherits Rectangle {
             close-clicked => { PanelBridge.pop(); }
         }
 
-        ScrollView {
-            mouse-drag-pan-enabled: true;
-            VerticalLayout {
+        ScrollArea {
+            content-height: content.preferred-height;
+            content := VerticalLayout {
                 alignment: start;
                 spacing: Theme.spacing-default;
                 padding: Theme.padding-screen;

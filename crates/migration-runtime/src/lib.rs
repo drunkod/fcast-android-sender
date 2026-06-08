@@ -1,3 +1,12 @@
+// Clippy lints scoped to genuine domain shapes — the protocol enums are
+// large by design, node constructors take many fields by design. Drop
+// `dead_code` from the crate-wide allow set; narrow to specific items.
+#![allow(
+    clippy::large_enum_variant,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::question_mark
+)]
 //! migration-runtime — extracted from `android-sender`.
 
 pub mod frame_pair;

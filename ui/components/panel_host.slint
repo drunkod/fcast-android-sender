@@ -15,6 +15,7 @@
 import { Panel } from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { SafeArea } from "../state/safe_area.slint";
+import { Theme } from "../theme.slint";
 
 export component PanelHost inherits Rectangle {
     background: transparent;
@@ -23,14 +24,43 @@ export component PanelHost inherits Rectangle {
 
     visible: PanelBridge.active != Panel.none;
 
-    // Inset rect — children stretch to fill this, safe-area math lives here once.
+    // Dark scrim background
     Rectangle {
-        x: 0;
-        y: SafeArea.top;
-        width: parent.width;
-        height: parent.height - SafeArea.top - SafeArea.bottom;
-        background: transparent;
+        background: Theme.scrim-strong;
+        
+        TouchArea {
+            clicked => { PanelBridge.close-all(); }
+        }
+    }
 
-        @children
+    // Centered card or bottom sheet card depending on portrait vs landscape.
+    // Portrait: bottom sheet style
+    // Landscape: centered dialog style
+    Rectangle {
+        x: parent.width > parent.height ? (parent.width - self.width) / 2 : 12px;
+        y: parent.width > parent.height ? (parent.height - self.height) / 2 : parent.height - self.height - 12px;
+        width: parent.width > parent.height ? parent.width * 0.7 : parent.width - 24px;
+        height: parent.width > parent.height ? parent.height * 0.85 : parent.height * 0.8;
+        background: Theme.surface-card.with-alpha(0.95);
+        border-radius: Theme.radius-card * 2;
+        border-width: 1px;
+        border-color: Theme.text-disabled.with-alpha(0.25);
+        drop-shadow-blur: Theme.elevation-3-blur;
+        drop-shadow-color: Theme.scrim-strong;
+
+        // Block touches propagating to scrim TouchArea
+        TouchArea {}
+
+        // Content area inside padding/rounded corners
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            clip: true;
+            border-radius: Theme.radius-card * 2;
+
+            @children
+        }
     }
 }

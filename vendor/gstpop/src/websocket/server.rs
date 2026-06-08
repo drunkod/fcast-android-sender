@@ -31,8 +31,13 @@ use super::pipeline::SnapshotParams;
 use super::protocol::Request;
 use super::{CLIENT_MESSAGE_BUFFER, MAX_CONCURRENT_CLIENTS};
 
-/// Maximum WebSocket message/frame size (128 KB) to prevent memory exhaustion
-const MAX_WS_MESSAGE_SIZE: usize = 128 * 1024;
+/// Maximum WebSocket message/frame size (8 MB).
+///
+/// Sized to accommodate raw video frames pushed via the binary `push_buffer`
+/// path (see [`push_buffer_wire`](super::push_buffer_wire)). I420 1080p is
+/// ~3 MB per frame and 2160p is ~12 MB; 8 MB covers up to ~1440p in a single
+/// frame and is also the upper bound for any other text/binary WS message.
+const MAX_WS_MESSAGE_SIZE: usize = 8 * 1024 * 1024;
 
 fn ws_config() -> WebSocketConfig {
     let mut config = WebSocketConfig::default();
@@ -205,7 +210,7 @@ async fn handle_connection(
         clients_map.insert(addr, tx);
     }
 
-    let handler = ManagerInterface::new(manager);
+    let handler = ManagerInterface::new(manager.clone());
 
     // Spawn task to forward messages from channel to WebSocket
     let sender_task = tokio::spawn(async move {
@@ -285,6 +290,28 @@ async fn handle_connection(
                     let _ = tx.try_send(Message::Pong(data));
                 }
             }
+            Ok(Message::Binary(bin)) => match super::push_buffer_wire::decode(&bin) {
+                Ok(decoded) => {
+                    let pipeline_id = decoded.pipeline_id.to_string();
+                    let element_name = decoded.element_name.to_string();
+                    let pts_ns = decoded.pts_ns;
+                    let payload = decoded.payload.to_vec();
+                    if let Err(e) = manager
+                        .push_buffer(&pipeline_id, &element_name, payload, pts_ns)
+                        .await
+                    {
+                        error!("Failed to push buffer from ws binary frame: {}", e);
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Discarding malformed push_buffer frame ({} bytes) from {}: {:?}",
+                        bin.len(),
+                        addr,
+                        e
+                    );
+                }
+            },
             Ok(_) => {}
             Err(e) => {
                 error!("Error receiving message from {}: {}", addr, e);

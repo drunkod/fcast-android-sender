@@ -2,13 +2,15 @@
 // Shown when AppState == Connecting.
 // Extracted verbatim from main.slint.
 
-import { VerticalBox } from "std-widgets.slint";
+
 import { Bridge } from "../bridge.slint";
 import { Theme } from "../theme.slint";
 import { LoadingView, DestructiveButton } from "../components/buttons.slint";
 
 export component ConnectingView inherits Rectangle {
-    VerticalBox {
+    VerticalLayout {
+        padding: 8px;
+        spacing: 8px;
         alignment: center;
         LoadingView {
             label: @tr("Connecting");

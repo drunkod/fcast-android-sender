@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
@@ -11,19 +11,14 @@ use gstpop::{
     server::{ServerConfig, ServerHandle},
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum EmbeddedState {
+    #[default]
     Stopped,
     Starting,
     Running,
     Error,
-}
-
-impl Default for EmbeddedState {
-    fn default() -> Self {
-        Self::Stopped
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -257,12 +252,20 @@ mod tests {
         reset();
         let port = pick_free_port();
         let a = start_embedded(port).await;
-        assert!(matches!(a.state, EmbeddedState::Running), "expected Running, got {:?}", a.state);
+        assert!(
+            matches!(a.state, EmbeddedState::Running),
+            "expected Running, got {:?}",
+            a.state
+        );
         assert!(!a.externally_owned);
         let b = start_embedded(port).await;
         assert!(matches!(b.state, EmbeddedState::Running));
         let c = stop_embedded().await;
-        assert!(matches!(c.state, EmbeddedState::Stopped), "expected Stopped, got {:?}", c.state);
+        assert!(
+            matches!(c.state, EmbeddedState::Stopped),
+            "expected Stopped, got {:?}",
+            c.state
+        );
     }
 
     #[tokio::test]
@@ -270,7 +273,9 @@ mod tests {
     async fn external_listener_is_adopted_and_not_killed() {
         reset();
         let port = pick_free_port();
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+            .await
+            .unwrap();
         let a = start_embedded(port).await;
         assert!(matches!(a.state, EmbeddedState::Running));
         assert!(a.externally_owned);
@@ -278,7 +283,10 @@ mod tests {
         // because we track ownership via the flag, not by re-probing.
         drop(listener);
         let b = stop_embedded().await;
-        assert!(matches!(b.state, EmbeddedState::Running), "externally_owned: stop should be no-op");
+        assert!(
+            matches!(b.state, EmbeddedState::Running),
+            "externally_owned: stop should be no-op"
+        );
         assert!(b.externally_owned);
         // Clean up so subsequent tests start fresh.
         reset();

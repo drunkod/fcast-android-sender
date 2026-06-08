@@ -8,8 +8,19 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <uses-feature android:name="android.hardware.camera"
+                  android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus"
+                  android:required="false" />
 
     <application
+        android:name=".FcastApp"
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/full_backup_content"
         android:icon="@mipmap/ic_launcher"
         android:label="FCast Sender"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -36,6 +47,11 @@
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".bench.CodecBenchmarkService"
+            android:process=":codec_bench"
+            android:exported="false"
+            android:stopWithTask="true" />
 
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"

@@ -1,16 +1,19 @@
 // panel_chrome.slint — Reusable panel-level UI primitives.
 //
 // Exports:
-//   PanelHeader        — 56px header with title + single "Done" button.
-//   PanelHeaderActions — 56px header with title + free-form @children actions.
-//   Card               — surface-card rounded rectangle with standard padding.
+//   PanelHeader        — header with title + single "Done" button.
+//   PanelHeaderActions — header with title + free-form @children actions.
+//   Card               — slintcn Card with standard app padding.
 //   FormRow            — vertical label + control(s) pair.
-//
-// Slint docs ref:
-//   draft/slint-ui/docs/astro/src/content/docs/guide/development/custom-controls.mdx
 
+// Note: titles/labels stay as plain Text — slintcn Label hardcodes a 14px
+// form-label size (would shrink the 20px panel headings) and embeds a TouchArea.
 import { Theme } from "../theme.slint";
-import { TextButton } from "buttons.slint";
+import { Button, ButtonVariant } from "../slintcn/components/button.slint";
+import {
+    Card as SlintcnCard,
+    CardVariant,
+} from "../slintcn/components/card.slint";
 
 // Standard header used by ~80 % of panels: title left, "Done" right.
 export component PanelHeader inherits Rectangle {
@@ -34,9 +37,12 @@ export component PanelHeader inherits Rectangle {
             accessible-label: root.title;
         }
 
-        TextButton {
-            label: @tr("close-panel-button" => "Done");
-            clicked => { root.close-clicked(); }
+        Button {
+            text: @tr("close-panel-button" => "Done");
+            variant: ButtonVariant.ghost;
+            clicked => {
+                root.close-clicked();
+            }
         }
     }
 }
@@ -66,19 +72,18 @@ export component PanelHeaderActions inherits Rectangle {
     }
 }
 
-// surface-card rounded container used for every settings group.
-export component Card inherits Rectangle {
+// slintcn Card pads via padding-l / gap-l — pad an INNER layout, not the Card.
+export component Card inherits SlintcnCard {
     in property <length> min-card-height: 56px;
 
-    background: Theme.surface-card;
-    border-radius: Theme.radius-card;
+    variant: CardVariant.solid;
     min-height: root.min-card-height;
     clip: true;
 
     VerticalLayout {
-        padding-left:   Theme.padding-screen;
-        padding-right:  Theme.padding-screen;
-        padding-top:    12px;
+        padding-left: Theme.padding-screen;
+        padding-right: Theme.padding-screen;
+        padding-top: 12px;
         padding-bottom: 12px;
         spacing: Theme.spacing-tight;
         @children
@@ -95,5 +100,6 @@ export component FormRow inherits VerticalLayout {
         color: Theme.text-secondary;
         font-size: Theme.font-size-label;
     }
+
     @children
 }

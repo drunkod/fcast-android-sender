@@ -12,6 +12,11 @@ import android.util.Log;
 public final class GstPopServiceBridge {
     private static final String TAG = "GstPopServiceBridge";
 
+    static {
+        System.loadLibrary("gstreamer_android");
+        System.loadLibrary("fcastsender");
+    }
+
     private GstPopServiceBridge() {}
 
     // ── Public API ────────────────────────────────────────────────────────────

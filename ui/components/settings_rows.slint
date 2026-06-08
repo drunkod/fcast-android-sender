@@ -1,21 +1,197 @@
-// settings_rows.slint — Reusable settings row and section components.
+// settings_rows.slint — Moblin-style settings rows and section card.
 //
-// Will export: SettingsTextRow, SettingsValueRow, SettingsToggleRow,
-//              SettingsSliderRow, SettingsSection
-// Reference:  draft/moblin-ui/Moblin/View/Utils/TextValueView.swift (design ref only)
-
+// slintcn migration (Step 5): SettingsSection uses slintcn Card, SettingsToggleRow
+// uses slintcn Switch, SettingsSliderRow uses slintcn Slider. Text nodes stay as
+// plain Text — slintcn Label embeds its own TouchArea (would steal taps from a
+// row's TouchArea) and hardcodes a single 14px size (would flatten the type
+// hierarchy: section labels, chevrons, subtitles all collapse to one size).
 import { Theme } from "../theme.slint";
-import { CheckBox, Slider } from "std-widgets.slint";
+import { Switch } from "../slintcn/components/switch.slint";
+import { Slider } from "../slintcn/components/slider.slint";
+import {
+    Card,
+    CardVariant,
+    CardPadding,
+} from "../slintcn/components/card.slint";
 
+export global RowColors {
+    out property <color> normal:  #1e2535;
+    out property <color> pressed: #2a3347;
+    out property <color> divider: #3a4154;
+}
+
+// ── SettingsSection — wrap rows in a slintcn Card ────────────────────────
+// card-padding: none keeps the Card flush so the 1px row spacing shows as a divider.
+export component SettingsSection inherits VerticalLayout {
+    in property <string> title: "";
+    spacing: 6px;
+    vertical-stretch: 0;
+    alignment: start;
+
+    if root.title != "": HorizontalLayout {
+        padding-left: Theme.padding-screen;
+        padding-right: Theme.padding-screen;
+        padding-bottom: 2px;
+        Text {
+            text: root.title;
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-label;
+            font-weight: 600;
+        }
+    }
+
+    Card {
+        variant: CardVariant.solid;
+        card-padding: CardPadding.none;
+        clip: true;
+        VerticalLayout {
+            alignment: start;
+            spacing: 1px;
+            @children
+        }
+    }
+}
+
+// ── SettingsValueRow — NavigationLink-style row with optional icon badge ──
+export component SettingsValueRow inherits Rectangle {
+    in property <string> icon: "";
+    in property <color> icon-bg: Theme.icon-bg-neutral;
+    in property <string> title;
+    in property <string> value: "";
+    in property <bool> enabled: true;
+    in property <bool> show-chevron: true;
+    callback clicked();
+
+    height: Theme.row-height;
+    opacity: root.enabled ? 1.0 : 0.45;
+    background: ta.pressed ? RowColors.pressed : RowColors.normal;
+
+    accessible-role: button;
+    accessible-label: root.title + (root.value != "" ? ", " + root.value : "");
+    accessible-enabled: root.enabled;
+    accessible-action-default => {
+        if root.enabled {
+            root.clicked();
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.padding-screen;
+        padding-right: Theme.padding-screen;
+        spacing: Theme.spacing-default;
+        alignment: center;
+
+        if root.icon != "": Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: Theme.radius-pill;
+            background: root.icon-bg;
+            Text {
+                text: root.icon;
+                font-size: Theme.font-size-icon;
+                color: Theme.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            text: root.title;
+            color: Theme.text-primary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.value;
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+        }
+        if root.show-chevron: Text {
+            text: "›";
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-heading;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// ── SettingsToggleRow — slintcn Switch ───────────────────────────────────
+export component SettingsToggleRow inherits Rectangle {
+    in property <string> icon: "";
+    in property <color> icon-bg: Theme.icon-bg-neutral;
+    in property <string> title;
+    in-out property <bool> checked: false;
+    in property <bool> enabled: true;
+    callback toggled(bool);
+
+    height: Theme.row-height;
+    opacity: root.enabled ? 1.0 : 0.45;
+    background: RowColors.normal;
+
+    accessible-role: switch;
+    accessible-label: root.title;
+    accessible-enabled: root.enabled;
+    accessible-checked: root.checked;
+    accessible-action-default => {
+        if root.enabled {
+            root.checked = !root.checked;
+            root.toggled(root.checked);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.padding-screen;
+        padding-right: Theme.padding-screen;
+        spacing: Theme.spacing-default;
+        alignment: center;
+
+        if root.icon != "": Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: Theme.radius-pill;
+            background: root.icon-bg;
+            Text {
+                text: root.icon;
+                font-size: Theme.font-size-icon;
+                color: Theme.text-primary;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        Text {
+            text: root.title;
+            color: Theme.text-primary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        Switch {
+            checked <=> root.checked;
+            disabled: !root.enabled;
+            toggled(v) => {
+                root.toggled(v);
+            }
+        }
+    }
+}
+
+// ── SettingsTextRow — read-only info row (version numbers, labels) ────────
 export component SettingsTextRow inherits Rectangle {
     in property <string> title;
     in property <string> subtitle: "";
-
-    height: root.subtitle == "" ? Theme.row-height : Theme.row-height + 18px;
-    background: transparent;
+    height: root.subtitle == "" ? Theme.row-height : Theme.row-height + Theme.font-size-label + Theme.spacing-default;
+    background: RowColors.normal;
 
     VerticalLayout {
-        padding-left:  Theme.padding-screen;
+        padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
         alignment: center;
         Text {
@@ -31,111 +207,37 @@ export component SettingsTextRow inherits Rectangle {
     }
 }
 
-export component SettingsValueRow inherits Rectangle {
-    in property <string> title;
-    in property <string> value: "";
-    in property <bool>   enabled: true;
-    in property <bool>   show-chevron: true;
-    callback clicked();
-
-    height: Theme.row-height;
-    opacity: root.enabled ? 1.0 : 0.45;
-    background: ta.pressed ? Theme.surface-card : transparent;
-
-    accessible-role:          button;
-    accessible-label:         root.title + (root.value != "" ? ", " + root.value : "");
-    accessible-enabled:       root.enabled;
-    accessible-action-default => { if root.enabled { root.clicked(); } }
-
-    ta := TouchArea {
-        enabled: root.enabled;
-        clicked => { root.clicked(); }
-    }
-    HorizontalLayout {
-        padding-left:  Theme.padding-screen;
-        padding-right: Theme.padding-screen;
-        spacing: Theme.spacing-default;
-        Text {
-            text: root.title;
-            color: Theme.text-primary;
-            vertical-alignment: center;
-            horizontal-stretch: 1;
-        }
-        Text {
-            text: root.value;
-            color: Theme.text-secondary;
-            vertical-alignment: center;
-        }
-        if root.show-chevron: Text {
-            text: "›";
-            color: Theme.text-secondary;
-            vertical-alignment: center;
-        }
-    }
-}
-
-export component SettingsToggleRow inherits Rectangle {
-    in property <string> title;
-    in-out property <bool> checked: false;
-    in property <bool> enabled: true;
-    callback toggled(bool);
-
-    height: Theme.row-height;
-    opacity: root.enabled ? 1.0 : 0.45;
-
-    accessible-role:    switch;
-    accessible-label:   root.title;
-    accessible-enabled: root.enabled;
-    accessible-checked: root.checked;
-    accessible-action-default => {
-        if root.enabled {
-            root.checked = !root.checked;
-            root.toggled(root.checked);
-        }
-    }
-
-    HorizontalLayout {
-        padding-left:  Theme.padding-screen;
-        padding-right: Theme.padding-screen;
-        Text {
-            text: root.title;
-            color: Theme.text-primary;
-            vertical-alignment: center;
-            horizontal-stretch: 1;
-        }
-        CheckBox {
-            checked <=> root.checked;
-            enabled: root.enabled;
-            toggled() => { root.toggled(self.checked); }
-        }
-    }
-}
-
+// ── SettingsSliderRow — slintcn Slider ───────────────────────────────────
 export component SettingsSliderRow inherits Rectangle {
     in property <string> title;
     in property <string> unit: "";
-    in property <float>  minimum: 0;
-    in property <float>  maximum: 100;
-    in property <bool>   show-fractional: false;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <bool> show-fractional: false;
     in-out property <float> value: 50;
     callback changed(float);
 
     height: Theme.row-height * 1.5;
+    background: RowColors.normal;
 
     VerticalLayout {
-        padding-left:  Theme.padding-screen;
+        padding-left: Theme.padding-screen;
         padding-right: Theme.padding-screen;
-        padding-top:   4px;
+        padding-top: Theme.spacing-tight;
         HorizontalLayout {
             Text {
                 text: root.title;
                 color: Theme.text-primary;
+                font-size: Theme.font-size-body;
                 vertical-alignment: center;
                 horizontal-stretch: 1;
             }
             Text {
-                text: root.show-fractional ? "\{Math.round(root.value * 10) / 10}\{root.unit}" : "\{Math.round(root.value)}\{root.unit}";
+                text: root.show-fractional
+                    ? "\{Math.round(root.value * 10) / 10}\{root.unit}"
+                    : "\{Math.round(root.value)}\{root.unit}";
                 color: Theme.text-secondary;
+                font-size: Theme.font-size-body;
                 vertical-alignment: center;
             }
         }
@@ -143,26 +245,9 @@ export component SettingsSliderRow inherits Rectangle {
             minimum: root.minimum;
             maximum: root.maximum;
             value <=> root.value;
-            changed(value) => { root.changed(value); }
+            changed(v) => {
+                root.changed(v);
+            }
         }
     }
-}
-
-export component SettingsSection inherits VerticalLayout {
-    in property <string> title: "";
-    spacing: 1px;
-    vertical-stretch: 0;
-    alignment: start;
-
-    if root.title != "": HorizontalLayout {
-        padding-left: Theme.padding-screen;
-        padding-bottom: 4px;
-        Text {
-            text: root.title;
-            color: Theme.text-secondary;
-            font-size: Theme.font-size-label;
-        }
-    }
-
-    @children
 }

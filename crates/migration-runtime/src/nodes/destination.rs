@@ -2,8 +2,18 @@ use crate::protocol::{DestinationFamily, DestinationInfo, NodeInfo, State};
 use chrono::{DateTime, Duration, Utc};
 use gst::prelude::*;
 use gst_app::AppSrc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::{error, info, warn};
+
+pub fn pick_rtmp_sink() -> &'static str {
+    if gst::ElementFactory::find("rtmp2sink").is_some() {
+        "rtmp2sink"
+    } else {
+        warn!("rtmp2sink unavailable, using deprecated rtmpsink");
+        "rtmpsink"
+    }
+}
 
 const WHEP_MEGA_BIT: u32 = 1024 * 1024;
 const WHEP_MIN_BITRATE: u32 = WHEP_MEGA_BIT / 2;
@@ -31,6 +41,7 @@ pub struct LiveDestinationPipeline {
     pub video_appsrc: Option<AppSrc>,
     pub audio_appsrc: Option<AppSrc>,
     pub whep_bound_ports: Option<Arc<Mutex<Option<(u16, u16)>>>>,
+    pub keyframe_ticker_active: Option<Arc<AtomicBool>>,
 }
 
 #[derive(Debug)]
@@ -134,6 +145,70 @@ pub struct DestinationNode {
 }
 
 impl DestinationNode {
+    fn attach_rtmp_mux_probe(mux: &gst::Element, id: &str) -> Result<(), String> {
+        let pad = mux
+            .static_pad("src")
+            .ok_or_else(|| "flvmux missing src pad".to_string())?;
+        let destination_id = id.to_string();
+        let out_count = Arc::new(AtomicU64::new(0));
+        let out_count_for_probe = Arc::clone(&out_count);
+        pad.add_probe(gst::PadProbeType::BUFFER, move |_pad, info| {
+            if let Some(buffer) = info.buffer() {
+                let count = out_count_for_probe.fetch_add(1, Ordering::Relaxed) + 1;
+                if count <= 10 || count % 30 == 0 {
+                    info!(
+                        destination_id = %destination_id,
+                        out_buf = count,
+                        pts_ms = buffer.pts().map(|t| t.mseconds()),
+                        dts_ms = buffer.dts().map(|t| t.mseconds()),
+                        dur_ms = buffer.duration().map(|t| t.mseconds()),
+                        size = buffer.size(),
+                        "migration rtmp mux output"
+                    );
+                }
+            }
+            gst::PadProbeReturn::Ok
+        });
+        Ok(())
+    }
+
+    fn spawn_force_key_unit_ticker(
+        encoder: &gst::Element,
+        id: &str,
+    ) -> Result<Arc<AtomicBool>, String> {
+        let sink_pad = encoder
+            .static_pad("sink")
+            .ok_or_else(|| format!("Encoder {} missing sink pad", encoder.name()))?;
+        let active = Arc::new(AtomicBool::new(true));
+        let active_for_thread = Arc::clone(&active);
+        let destination_id = id.to_string();
+        std::thread::spawn(move || {
+            let mut count: u32 = 0;
+            while active_for_thread.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                if !active_for_thread.load(Ordering::SeqCst) {
+                    break;
+                }
+                count = count.wrapping_add(1);
+                let event = gst_video::DownstreamForceKeyUnitEvent::builder()
+                    .timestamp(gst::ClockTime::NONE)
+                    .stream_time(gst::ClockTime::NONE)
+                    .running_time(gst::ClockTime::NONE)
+                    .all_headers(true)
+                    .count(count)
+                    .build();
+                let pushed = sink_pad.send_event(event);
+                info!(
+                    destination_id = %destination_id,
+                    count,
+                    pushed,
+                    "sent periodic downstream force-key-unit"
+                );
+            }
+        });
+        Ok(active)
+    }
+
     fn gst_initialized() -> bool {
         unsafe { gst::ffi::gst_is_initialized() != 0 }
     }
@@ -294,6 +369,9 @@ impl DestinationNode {
         } else if venc.has_property("gop-size") {
             venc.set_property("gop-size", 30i32);
         }
+        if venc.has_property("i-frame-interval") {
+            venc.set_property("i-frame-interval", 1u32);
+        }
     }
 
     #[cfg(target_os = "android")]
@@ -356,6 +434,10 @@ impl DestinationNode {
     fn select_video_encoder(id: &str) -> Result<VideoEncoderChain, String> {
         let encoder_name = format!("destination-venc-{id}");
         let h264_factories = Self::h264_encoder_factories();
+        let h264_factory_names: Vec<String> = h264_factories
+            .iter()
+            .map(|factory| factory.name().to_string())
+            .collect();
         let mut attempts = Self::amc_encoder_factories();
         attempts.sort_by_key(|factory| {
             (
@@ -372,24 +454,36 @@ impl DestinationNode {
         for factory in &attempts {
             let factory_name = factory.name().to_string();
             attempted_names.push(factory_name.clone());
-            if let Ok(venc) = Self::make_element(&factory_name, Some(&encoder_name)) {
-                let capsfilter =
-                    Self::make_element("capsfilter", Some(&format!("destination-venc-caps-{id}")))?;
-                let caps = gst::Caps::builder("video/x-raw")
-                    .field("format", "NV12")
-                    .build();
-                capsfilter.set_property("caps", &caps);
-                Self::configure_video_encoder(&venc);
-                Self::configure_video_encoder_bitrate(&venc);
-                info!(
-                    destination_id = %id,
-                    encoder = %factory_name,
-                    "Selected Android H.264 video encoder"
-                );
-                return Ok(VideoEncoderChain {
-                    encoder: venc,
-                    capsfilter: Some(capsfilter),
-                });
+            match Self::make_element(&factory_name, Some(&encoder_name)) {
+                Ok(venc) => {
+                    let capsfilter = Self::make_element(
+                        "capsfilter",
+                        Some(&format!("destination-venc-caps-{id}")),
+                    )?;
+                    let caps = gst::Caps::builder("video/x-raw")
+                        .field("format", "NV12")
+                        .build();
+                    capsfilter.set_property("caps", &caps);
+                    Self::configure_video_encoder(&venc);
+                    Self::configure_video_encoder_bitrate(&venc);
+                    info!(
+                        destination_id = %id,
+                        encoder = %factory_name,
+                        "Selected Android H.264 video encoder"
+                    );
+                    return Ok(VideoEncoderChain {
+                        encoder: venc,
+                        capsfilter: Some(capsfilter),
+                    });
+                }
+                Err(err) => {
+                    warn!(
+                        destination_id = %id,
+                        encoder = %factory_name,
+                        error = %err,
+                        "Android H.264 encoder factory could not be instantiated"
+                    );
+                }
             }
         }
 
@@ -414,6 +508,14 @@ impl DestinationNode {
         } else {
             attempted_names.join(", ")
         };
+        warn!(
+            destination_id = %id,
+            amc_factory_count = attempts.len(),
+            h264_factory_count = h264_factory_names.len(),
+            h264_factories = %h264_factory_names.join(", "),
+            tried_encoders = %tried_encoders,
+            "Failed to select an Android H.264 encoder before software fallback"
+        );
         Err(format!(
             "Failed to create an Android H.264 video encoder (tried {tried_encoders})"
         ))
@@ -477,6 +579,7 @@ impl DestinationNode {
     ) -> Result<LiveDestinationPipeline, String> {
         let pipeline = gst::Pipeline::with_name(&format!("migration-destination-{}", self.id));
         let mut whep_bound_ports = None;
+        let mut keyframe_ticker_active = None;
 
         let video_appsrc = if self.video_enabled {
             let appsrc = Self::make_appsrc(&self.id, "video")?;
@@ -490,7 +593,8 @@ impl DestinationNode {
             None
         };
 
-        let audio_appsrc = if self.audio_enabled {
+        // RTMP always uses an embedded mic/silence source; external audio is not mixed in.
+        let audio_appsrc = if self.audio_enabled && !matches!(self.family, DestinationFamily::Rtmp { .. }) {
             let appsrc = Self::make_appsrc(&self.id, "audio")?;
             pipeline
                 .add(appsrc.upcast_ref::<gst::Element>())
@@ -506,7 +610,9 @@ impl DestinationNode {
             DestinationFamily::Rtmp { uri } => {
                 let mux = Self::make_element("flvmux", None)?;
                 let mux_queue = Self::make_element("queue", None)?;
-                let sink = Self::make_element("rtmp2sink", None)?;
+
+                let sink_factory = pick_rtmp_sink();
+                let sink = Self::make_element(sink_factory, None)?;
 
                 pipeline.add(&mux).map_err(|err| {
                     format!("Failed to add flvmux to destination pipeline: {err:?}")
@@ -515,7 +621,7 @@ impl DestinationNode {
                     format!("Failed to add mux queue to destination pipeline: {err:?}")
                 })?;
                 pipeline.add(&sink).map_err(|err| {
-                    format!("Failed to add rtmp2sink to destination pipeline: {err:?}")
+                    format!("Failed to add {sink_factory} to destination pipeline: {err:?}")
                 })?;
 
                 sink.set_property("location", uri.clone());
@@ -528,70 +634,135 @@ impl DestinationNode {
                 if mux.has_property("latency") {
                     mux.set_property("latency", 1_000_000_000u64);
                 }
+                Self::attach_rtmp_mux_probe(&mux, &self.id)?;
                 gst::Element::link_many([&mux, &mux_queue, &sink].as_slice())
                     .map_err(|err| format!("Failed to link rtmp mux chain: {err:?}"))?;
 
                 if let Some(appsrc) = video_appsrc.as_ref() {
                     let vconv = Self::make_element("videoconvert", None)?;
-                    let timecodestamper = Self::make_element("timecodestamper", None)?;
-                    let timeoverlay = Self::make_element("timeoverlay", None)?;
+                    let vrate = Self::make_element("videorate", None)?;
+                    let raw_capsfilter = Self::make_element("capsfilter", None)?;
+                    let timecodestamper = gst::ElementFactory::make("timecodestamper").build().ok();
+                    let timeoverlay = gst::ElementFactory::make("timeoverlay").build().ok();
                     let venc_chain = Self::select_video_encoder(&self.id)?;
                     let vparse = Self::make_element("h264parse", None)?;
+                    let h264_capsfilter = Self::make_element("capsfilter", None)?;
                     let venc_queue = Self::make_element("queue", None)?;
 
                     pipeline.add(&vconv).map_err(|err| {
                         format!("Failed to add videoconvert to rtmp pipeline: {err:?}")
                     })?;
-                    pipeline.add(&timecodestamper).map_err(|err| {
-                        format!("Failed to add timecodestamper to rtmp pipeline: {err:?}")
+                    pipeline.add(&vrate).map_err(|err| {
+                        format!("Failed to add videorate to rtmp pipeline: {err:?}")
                     })?;
-                    pipeline.add(&timeoverlay).map_err(|err| {
-                        format!("Failed to add timeoverlay to rtmp pipeline: {err:?}")
+                    pipeline.add(&raw_capsfilter).map_err(|err| {
+                        format!("Failed to add raw capsfilter to rtmp pipeline: {err:?}")
                     })?;
+                    if let Some(ref e) = timecodestamper {
+                        pipeline.add(e).map_err(|err| {
+                            format!("Failed to add timecodestamper to rtmp pipeline: {err:?}")
+                        })?;
+                    }
+                    if let Some(ref e) = timeoverlay {
+                        pipeline.add(e).map_err(|err| {
+                            format!("Failed to add timeoverlay to rtmp pipeline: {err:?}")
+                        })?;
+                    }
                     Self::add_video_encoder_chain(&pipeline, &venc_chain, "rtmp pipeline")?;
                     pipeline.add(&vparse).map_err(|err| {
                         format!("Failed to add h264parse to rtmp pipeline: {err:?}")
+                    })?;
+                    pipeline.add(&h264_capsfilter).map_err(|err| {
+                        format!("Failed to add h264 capsfilter to rtmp pipeline: {err:?}")
                     })?;
                     pipeline.add(&venc_queue).map_err(|err| {
                         format!("Failed to add video queue to rtmp pipeline: {err:?}")
                     })?;
 
+                    raw_capsfilter.set_property(
+                        "caps",
+                        gst::Caps::builder("video/x-raw")
+                            .field("framerate", gst::Fraction::new(30, 1))
+                            .build(),
+                    );
                     if vparse.has_property("config-interval") {
-                        vparse.set_property("config-interval", -1i32);
+                        vparse.set_property("config-interval", 1i32);
                     }
-                    if timecodestamper.has_property("source") {
-                        timecodestamper.set_property_from_str("source", "rtc");
+                    h264_capsfilter.set_property(
+                        "caps",
+                        gst::Caps::builder("video/x-h264")
+                            .field("stream-format", "avc")
+                            .field("alignment", "au")
+                            .field("profile", "baseline")
+                            .build(),
+                    );
+                    if let Some(ref e) = timecodestamper {
+                        if e.has_property("source") {
+                            e.set_property_from_str("source", "rtc");
+                        }
                     }
-                    if timeoverlay.has_property("time-mode") {
-                        timeoverlay.set_property_from_str("time-mode", "time-code");
+                    if let Some(ref e) = timeoverlay {
+                        if e.has_property("time-mode") {
+                            e.set_property_from_str("time-mode", "time-code");
+                        }
+                    }
+
+                    let mut pre_chain: Vec<gst::Element> = vec![vconv, vrate, raw_capsfilter];
+                    if let Some(ref e) = timecodestamper {
+                        pre_chain.push(e.clone());
+                    }
+                    if let Some(ref e) = timeoverlay {
+                        pre_chain.push(e.clone());
                     }
 
                     gst::Element::link_many(
-                        [
-                            appsrc.upcast_ref::<gst::Element>(),
-                            &vconv,
-                            &timecodestamper,
-                            &timeoverlay,
-                        ]
-                        .as_slice(),
+                        std::iter::once(appsrc.upcast_ref::<gst::Element>())
+                            .chain(pre_chain.iter().map(|e| e.upcast_ref::<gst::Element>()))
+                            .collect::<Vec<_>>()
+                            .as_slice(),
                     )
                     .map_err(|err| format!("Failed to link rtmp video preprocessing: {err:?}"))?;
+
                     Self::link_video_encoder_chain(
-                        &timeoverlay,
+                        pre_chain.last().unwrap(),
                         &venc_chain,
                         &vparse,
                         "rtmp video encoder chain",
                     )?;
-                    gst::Element::link_many([&vparse, &venc_queue, &mux].as_slice())
-                        .map_err(|err| format!("Failed to link rtmp video output: {err:?}"))?;
+                    gst::Element::link_many(
+                        [&vparse, &h264_capsfilter, &venc_queue, &mux].as_slice(),
+                    )
+                    .map_err(|err| format!("Failed to link rtmp video output: {err:?}"))?;
+                    keyframe_ticker_active = Some(Self::spawn_force_key_unit_ticker(
+                        &venc_chain.encoder,
+                        &self.id,
+                    )?);
                 }
 
-                if let Some(appsrc) = audio_appsrc.as_ref() {
+                // Always add a dummy/mic audio track for RTMP
+                {
+                    #[cfg(target_os = "android")]
+                    let audiosrc = Self::make_element("openslessrc", None)?;
+                    #[cfg(not(target_os = "android"))]
+                    let audiosrc = {
+                        let src = Self::make_element("audiotestsrc", None)?;
+                        src.set_property("is-live", true);
+                        src.set_property_from_str("wave", "silence");
+                        src
+                    };
+
                     let aconv = Self::make_element("audioconvert", None)?;
                     let aresample = Self::make_element("audioresample", None)?;
-                    let aenc = Self::make_element("avenc_aac", None)?;
+                    let aenc = Self::make_first_available_element(
+                        &["avenc_aac", "voaacenc", "fdkaacenc", "amcaudioenc-aac"],
+                        None,
+                        "aac encoder",
+                    )?;
                     let aenc_queue = Self::make_element("queue", None)?;
 
+                    pipeline.add(&audiosrc).map_err(|err| {
+                        format!("Failed to add audio source to rtmp pipeline: {err:?}")
+                    })?;
                     pipeline.add(&aconv).map_err(|err| {
                         format!("Failed to add audioconvert to rtmp pipeline: {err:?}")
                     })?;
@@ -607,7 +778,7 @@ impl DestinationNode {
 
                     gst::Element::link_many(
                         [
-                            appsrc.upcast_ref::<gst::Element>(),
+                            &audiosrc,
                             &aconv,
                             &aresample,
                             &aenc,
@@ -907,11 +1078,15 @@ impl DestinationNode {
             video_appsrc,
             audio_appsrc,
             whep_bound_ports,
+            keyframe_ticker_active,
         })
     }
 
     fn teardown_live_pipeline(&mut self) {
         if let Some(live) = self.live_pipeline.take() {
+            if let Some(active) = live.keyframe_ticker_active.as_ref() {
+                active.store(false, Ordering::SeqCst);
+            }
             let _ = live.pipeline.set_state(gst::State::Null);
         }
     }

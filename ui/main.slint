@@ -46,7 +46,7 @@
 //   pages/connecting_page — ConnectingView
 //   pages/settings_page   — SettingsPageView
 //   pages/casting_page    — WaitingForMediaView, CastingView
-//   pages/debug_page      — DebugPage (used inside connect_page)
+//   pages/debug_page      — FullDebugPage
 //   components/*          — shared components (stubs, populated Phase 3–5)
 
 // ── Bridge + AppState: import for local use, re-export for the Rust backend ──
@@ -68,7 +68,8 @@ import { SettingsPageView, FullSettingsPage } from "pages/settings_page.slint";
 import { WaitingForMediaView,
          CastingView }                  from "pages/casting_page.slint";
 import { CodecTestPage }                from "pages/codec_test_page.slint";
-import { DebugPage, FullDebugPage }     from "pages/debug_page.slint";
+import { CodecPerfPage }                from "pages/codec_perf_page.slint";
+import { FullDebugPage }                from "pages/debug_page.slint";
 import { BackupResetPage }              from "pages/backup_reset_page.slint";
 import { AudioPage }                    from "pages/audio_page.slint";
 import { BitratePresetsPage }           from "pages/bitrate_presets_page.slint";
@@ -88,14 +89,23 @@ import { NetworkPage }                  from "pages/network_page.slint";
 import { MixerPage }                    from "pages/mixer_page.slint";
 import { MediaBackendPage }             from "pages/media_backend_page.slint";
 import { TestFunctionalityPage }        from "pages/test_functionality_page.slint";
+import { CameraRtmpStreamPage }         from "pages/camera_rtmp_stream_page.slint";
+import { RtmpStreamWizardPage }         from "pages/rtmp_wizard_page.slint";
 import { Theme } from "theme.slint";
 import { CastControlBar } from "components/control_bar.slint";
 import { InfoBanner } from "components/info_banner.slint";
 import { PanelHost } from "components/panel_host.slint";
+import { LockOverlay } from "components/lock_overlay.slint";
+import { StealthOverlay } from "components/stealth_overlay.slint";
+import { SnapshotCountdown } from "components/snapshot_countdown.slint";
+import { CameraHud, CameraHudMetrics } from "components/camera_hud.slint";
+import { StreamLeftOverlay, StreamRightBadges } from "components/stream_status_overlay.slint";
+import { LifecycleMode } from "bridge.slint";
 
 // ── Root window ───────────────────────────────────────────────────────────────
 export component MainWindow inherits Window {
-    background: Theme.surface-primary;
+    always-on-top: false;
+    background: transparent;
     forward-focus: back-key-scope;
 
     // Populate SafeArea once from the platform's native insets.
@@ -144,7 +154,20 @@ export component MainWindow inherits Window {
                 if Bridge.app-state == AppState.WaitingForMedia:   WaitingForMediaView { }
                 if Bridge.app-state == AppState.Casting:           CastingView { }
             }
-            CastControlBar { }
+            // Bottom zone: control bar + HUD overlay anchored above it.
+            // clip:false (default) lets CameraHud render above this rectangle.
+            Rectangle {
+                height: Theme.control-bar-height;
+                background: transparent;
+                clip: false;
+
+                CastControlBar { width: parent.width; height: parent.height; }
+
+                if PanelBridge.active == Panel.none: CameraHud {
+                    x: parent.width - CameraHudMetrics.bar-width - Theme.padding-screen;
+                    y: -CameraHudMetrics.total-height - 8px;
+                }
+            }
         }
 
         // ── Panel overlay layer ───────────────────────────────────────────────────
@@ -154,6 +177,7 @@ export component MainWindow inherits Window {
             if PanelBridge.active == Panel.settings:            FullSettingsPage        { }
             if PanelBridge.active == Panel.debug:               FullDebugPage           { }
             if PanelBridge.active == Panel.codec-test:          CodecTestPage           { }
+            if PanelBridge.active == Panel.codec-perf:          CodecPerfPage           { }
             if PanelBridge.active == Panel.backup-reset:        BackupResetPage         { }
             if PanelBridge.active == Panel.audio:               AudioPage               { }
             if PanelBridge.active == Panel.camera:              CameraPage              { }
@@ -179,6 +203,24 @@ export component MainWindow inherits Window {
             if PanelBridge.active == Panel.mixer:               MixerPage               { }
             if PanelBridge.active == Panel.media-backend:       MediaBackendPage        { }
             if PanelBridge.active == Panel.test-functionality:  TestFunctionalityPage   { }
+            if PanelBridge.active == Panel.camera-rtmp-stream:  CameraRtmpStreamPage    { }
+            if PanelBridge.active == Panel.rtmp-wizard:          RtmpStreamWizardPage     { }
+        }
+
+        // ── Stream status overlays (top-left + top-right) ────────────────────────
+        // Only during active streaming states; hidden when disconnected/no panel.
+        if PanelBridge.active == Panel.none
+                && Bridge.app-state != AppState.Disconnected: StreamLeftOverlay {
+            x: 0;
+            y: SafeArea.top + 8px;
+            width: parent.width / 2;
+        }
+        if PanelBridge.active == Panel.none
+                && Bridge.app-state != AppState.Disconnected: StreamRightBadges {
+            x: 0;
+            y: SafeArea.top + 8px;
+            width: parent.width;
+            right-inset: CameraHudMetrics.bar-width + 4px;
         }
 
         // ── Global banner overlay ─────────────────────────────────────────────────
@@ -187,5 +229,10 @@ export component MainWindow inherits Window {
             y: SafeArea.top;
             width: parent.width;
         }
+
+        // ── Lifecycle overlay layer ───────────────────────────────────────────────
+        if Bridge.lifecycle == LifecycleMode.lock-screen:        LockOverlay { }
+        if Bridge.lifecycle == LifecycleMode.stealth:            StealthOverlay { }
+        if Bridge.lifecycle == LifecycleMode.snapshot-countdown: SnapshotCountdown { }
     }
 }

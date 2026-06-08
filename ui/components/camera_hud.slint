@@ -1,0 +1,76 @@
+// camera_hud.slint — camera overlay bars built on slintcn Tabs (segmented).
+//
+//   Zoom bar:   0.5× 1× 2× 5× 10×   → Tabs (5 segments), index ↔ zoom value
+//   Camera bar: Dual | Front        → Tabs (2 segments), index ↔ camera-idx
+//
+// Single source of truth stays in Bridge (camera-zoom-level, camera-idx); each
+// Tabs reflects it one-way via `current:` and writes back in `changed`.
+import { Bridge } from "../bridge.slint";
+import { Tabs, TabItem, TabsVariant } from "../slintcn/components/tabs.slint";
+
+// Bar width matches the old HUD so both bars align flush-right under the preview.
+export global CameraHudMetrics {
+    out property <length> bar-width: 254px;
+    out property <length> bar-height: 36px;            // slintcn Tabs segmented height
+    out property <length> spacing: 6px;
+    out property <length> total-height: 2 * bar-height + spacing;
+}
+
+export component CameraHud inherits Rectangle {
+    background: transparent;
+    width: CameraHudMetrics.bar-width;
+    height: CameraHudMetrics.total-height;
+
+    // ── zoom value ⇄ segment index ────────────────────────────────────────
+    pure function zoom-to-index(z: float) -> int {
+        return Math.abs(z - 0.5)  < 0.05 ? 0
+             : Math.abs(z - 1.0)  < 0.05 ? 1
+             : Math.abs(z - 2.0)  < 0.05 ? 2
+             : Math.abs(z - 5.0)  < 0.05 ? 3
+             : Math.abs(z - 10.0) < 0.05 ? 4
+             :                             1;   // default to 1×
+    }
+    pure function index-to-zoom(i: int) -> float {
+        return i == 0 ? 0.5 : i == 1 ? 1.0 : i == 2 ? 2.0 : i == 3 ? 5.0 : 10.0;
+    }
+
+    VerticalLayout {
+        spacing: CameraHudMetrics.spacing;
+        alignment: start;
+
+        // Zoom presets.
+        Tabs {
+            width: CameraHudMetrics.bar-width;
+            variant: TabsVariant.default;
+            items: [
+                { label: "0.5×" },
+                { label: "1×" },
+                { label: "2×" },
+                { label: "5×" },
+                { label: "10×" },
+            ];
+            current: root.zoom-to-index(Bridge.camera-zoom-level);
+            changed(i) => {
+                Bridge.camera-zoom-level = root.index-to-zoom(i);
+                Bridge.start-camera-rtmp-preview();
+                Bridge.save-cam-rtmp-config();
+            }
+        }
+
+        // Camera mode — Dual (back) | Front.
+        Tabs {
+            width: CameraHudMetrics.bar-width;
+            variant: TabsVariant.default;
+            items: [
+                { label: "Dual" },
+                { label: "Front" },
+            ];
+            current: Bridge.camera-idx == 1 ? 0 : 1;
+            changed(i) => {
+                Bridge.camera-idx = i == 0 ? 1 : 0;
+                Bridge.start-camera-rtmp-preview();
+                Bridge.save-cam-rtmp-config();
+            }
+        }
+    }
+}
