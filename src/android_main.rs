@@ -1324,6 +1324,88 @@ fn android_main(app: PlatformApp) {
         }
     });
 
+    // ── Codec performance benchmark callbacks ────────────────────────────
+    // Publish a report as both the raw string and a per-line model so the page
+    // renders it in a virtualised ListView (mirrors set_codec_log).
+    fn set_perf_log(ui: &MainWindow, text: &str) {
+        let lines: Vec<slint::SharedString> = text.lines().map(|l| l.into()).collect();
+        ui.global::<Bridge>()
+            .set_perf_test_log_lines(std::rc::Rc::new(slint::VecModel::from(lines)).into());
+        ui.global::<Bridge>().set_perf_test_log(text.into());
+    }
+
+    ui.global::<Bridge>().on_run_perf_test({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_perf_test_running(true);
+                set_perf_log(&ui, "Running full codec benchmark…\nThis may take 1-2 minutes.");
+            });
+            let ui_inner = ui_weak.clone();
+            std::thread::spawn(move || {
+                let report = crate::codec_perf::run_full_benchmark();
+                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
+                    set_perf_log(&ui, &report);
+                    ui.global::<Bridge>().set_perf_test_running(false);
+                });
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_run_perf_encode_only({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_perf_test_running(true);
+                set_perf_log(&ui, "Running encode benchmark…");
+            });
+            let ui_inner = ui_weak.clone();
+            std::thread::spawn(move || {
+                let report = crate::codec_perf::run_encode_benchmarks();
+                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
+                    set_perf_log(&ui, &report);
+                    ui.global::<Bridge>().set_perf_test_running(false);
+                });
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_run_perf_decode_only({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_perf_test_running(true);
+                set_perf_log(&ui, "Running decode benchmark…");
+            });
+            let ui_inner = ui_weak.clone();
+            std::thread::spawn(move || {
+                let report = crate::codec_perf::run_decode_benchmarks();
+                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
+                    set_perf_log(&ui, &report);
+                    ui.global::<Bridge>().set_perf_test_running(false);
+                });
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_run_perf_list_factories({
+        let ui_weak = ui.as_weak();
+        move || {
+            let _ = ui_weak.upgrade_in_event_loop(|ui| {
+                ui.global::<Bridge>().set_perf_test_running(true);
+                set_perf_log(&ui, "Listing GStreamer codec factories…");
+            });
+            let ui_inner = ui_weak.clone();
+            std::thread::spawn(move || {
+                let report = crate::codec_perf::list_codec_factories();
+                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
+                    set_perf_log(&ui, &report);
+                    ui.global::<Bridge>().set_perf_test_running(false);
+                });
+            });
+        }
+    });
+
     use crate::jni_bridge::camera::{
         upcall_start_camera_capture, upcall_start_camera_preview, upcall_stop_camera_capture,
         upcall_stop_camera_preview,
