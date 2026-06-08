@@ -343,6 +343,13 @@ export component FullSettingsPage inherits Rectangle {
                         clicked => { PanelBridge.push(Panel.codec-test); }
                     }
                     SettingsValueRow {
+                        icon: "⚡";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Codec performance test");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => { PanelBridge.push(Panel.codec-perf); }
+                    }
+                    SettingsValueRow {
                         icon: "📋";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Debug log");
