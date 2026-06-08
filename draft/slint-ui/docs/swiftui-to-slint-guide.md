@@ -192,6 +192,103 @@ Priority: after components/pages exist.
 
 Current `MainWindow` already switches on `Bridge.app-state`. Extend this into a richer page/router architecture rather than recreating Moblin's SwiftUI root exactly.
 
+## Scene & Widget System Mappings
+
+> Added for Phase 40 (scenes) and Phase 41 (widgets).
+> See also: `draft/moblin-scene-widget-mapping.md`, `draft/moblin-fcast-version-map.md`
+
+### Scene system
+
+| SwiftUI / Moblin | Slint / FCast target |
+|---|---|
+| `ScenesSettingsView` (scene list + create + reorder) | `scene_list_page.slint` — `for scene in Bridge.scenes: SceneRow { name: scene.name; active: scene.active; }` |
+| `SceneSettingsView` (per-scene: source, mic, widgets) | `scene_edit_page.slint` — `VerticalLayout` with sections for video-source, mic, widget-list, quick-switch |
+| `SceneWidgetSettingsView` (widget layout in scene) | `scene_widget_edit_page.slint` — layout editor with `TouchArea` drag handles for position/size |
+| Scene button bar in `ControlBarPortraitView` | `HorizontalLayout` of `SceneButton { name: string; active: bool; clicked => { Bridge.set-scene(id); } }` in `stream_page.slint` bottom bar |
+| `model.selectScene(id:)` / `SceneSelector` | `Bridge.set-scene(scene-id)` callback → Rust `Command::SetScene { scene_id }` |
+| `model.sceneUpdated()` (pipeline reconfigure) | `NodeManager::handle_set_scene()` → diff compositor pads |
+| `database.scenes.move(fromOffsets:toOffset:)` | `Bridge.reorder-scenes(from-idx, to-idx)` callback → persist reorder |
+| `SettingsScene.quickSwitchGroup` (1–4) | `Scene.quick_switch_group: Option<u8>` — same group = instant switch (no camera reattach) |
+
+### Widget system
+
+| SwiftUI / Moblin | Slint / FCast target |
+|---|---|
+| `WidgetWizardSettingsView` (type picker → config wizard) | `wizard_widget_create_page.slint` — step 1: type picker, step 2: name, step 3: config, step 4: scene assignment |
+| `WidgetSettingsView` / `WidgetLayoutView` (position/size/alignment) | `scene_widget_edit_page.slint` — `TouchArea` drag for x/y, resize handles for w/h, numeric inputs, 3×3 alignment grid |
+| `WidgetTextSettingsView` (format string, font, color) | `widget_text_settings_page.slint` — `LineEdit` for format, preset font-size picker, color palette |
+| `WidgetImageSettingsView` (image picker, scale mode) | `widget_image_settings_page.slint` — gallery picker, fit/fill/stretch selector |
+| `WidgetCropSettingsView` (top/bottom/left/right) | `widget_crop_settings_page.slint` — 4 sliders (0–50%) |
+| `SettingsWidgetType.allCases` (16 types) | `WidgetTypeChoice` enum: `text`, `image`, `crop`, `clock` (MVP subset) |
+| Widget overlay rendering (AVFoundation layers) | GStreamer `compositor` element — one sink pad per active widget, positioned via `xpos`/`ypos`/`width`/`height`/`alpha` pad properties |
+| `model.setCurrentScene()` → widget effects update | `Command::SetScene` → compositor pad add/remove/update |
+
+### Bridge additions for scenes/widgets
+
+```slint
+// In bridge.slint — Scene/Widget globals
+
+export struct SceneItem {
+    id: string,
+    name: string,
+    enabled: bool,
+    active: bool,
+    widget-count: int,
+}
+
+export struct WidgetItem {
+    id: string,
+    name: string,
+    widget-type: string,  // "text" | "image" | "crop" | "clock"
+    enabled: bool,
+}
+
+export enum WidgetTypeChoice { text, image, crop, clock }
+
+export global Bridge {
+    // Scene properties
+    in property <[SceneItem]> scenes;
+    in-out property <string> current-scene-id;
+
+    // Scene callbacks
+    callback set-scene(string);
+    callback create-scene(string);
+    callback remove-scene(string);
+    callback reorder-scenes(int, int);
+
+    // Widget properties
+    in property <[WidgetItem]> widgets;
+
+    // Widget callbacks
+    callback create-widget(string, WidgetTypeChoice);
+    callback remove-widget(string);
+    callback update-widget-layout(string, string, float, float, float, float);
+    //                           scene_id, widget_id, x, y, w, h
+}
+```
+
+### GStreamer compositor pattern (Rust side)
+
+```rust
+// When Command::SetScene is received:
+fn handle_set_scene(&mut self, scene_id: &str) {
+    let scene = self.config.scenes.iter().find(|s| s.id == scene_id);
+    let active_widgets = scene.widgets.iter().filter(|w| w.enabled);
+
+    // Diff current compositor pads vs new widget set
+    for widget_placement in active_widgets {
+        let pad = compositor.request_pad_simple("sink_%u");
+        pad.set_property("xpos", (widget_placement.layout.x * width / 100.0) as i32);
+        pad.set_property("ypos", (widget_placement.layout.y * height / 100.0) as i32);
+        pad.set_property("width", (widget_placement.layout.width * width / 100.0) as i32);
+        pad.set_property("height", (widget_placement.layout.height * height / 100.0) as i32);
+        pad.set_property("alpha", widget_placement.layout.opacity);
+    }
+}
+```
+
+---
+
 ## Risks and blockers
 
 - Moblin SwiftUI views depend on 233 `@EnvironmentObject` references and 749 `@ObservedObject` references in copied files.
