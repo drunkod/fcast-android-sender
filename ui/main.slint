@@ -54,9 +54,25 @@ import { Bridge, AppState, Panel } from "bridge.slint";
 export { Bridge, AppState, Panel }
 
 // ── Per-feature globals: re-export so slint_build generates Rust bindings ────
-import { SafeArea, AppBridge, PanelBridge, BannerBridge, MediaBackend, Recording,
-         Casting, Receivers, History, Macros, Quickbar, BitratePresets,
-         Network, Mixer, DebugLog, Camera, Audio } from "state/index.slint";
+import {
+    SafeArea,
+    AppBridge,
+    PanelBridge,
+    BannerBridge,
+    MediaBackend,
+    Recording,
+    Casting,
+    Receivers,
+    History,
+    Macros,
+    Quickbar,
+    BitratePresets,
+    Network,
+    Mixer,
+    DebugLog,
+    Camera,
+    Audio,
+} from "state/index.slint";
 export { SafeArea, AppBridge, PanelBridge, BannerBridge, MediaBackend, Recording,
          Casting, Receivers, History, Macros, Quickbar, BitratePresets,
          Network, Mixer, DebugLog, Camera, Audio }
@@ -65,19 +81,25 @@ export { SafeArea, AppBridge, PanelBridge, BannerBridge, MediaBackend, Recording
 import { ConnectView }                   from "pages/connect_page.slint";
 import { ConnectingView }               from "pages/connecting_page.slint";
 import { SettingsPageView, FullSettingsPage } from "pages/settings_page.slint";
-import { WaitingForMediaView,
-         CastingView }                  from "pages/casting_page.slint";
+import {
+    WaitingForMediaView,
+    CastingView,
+}                  from "pages/casting_page.slint";
 import { CodecTestPage }                from "pages/codec_test_page.slint";
 import { CodecPerfPage }                from "pages/codec_perf_page.slint";
 import { FullDebugPage }                from "pages/debug_page.slint";
 import { BackupResetPage }              from "pages/backup_reset_page.slint";
 import { AudioPage }                    from "pages/audio_page.slint";
 import { BitratePresetsPage }           from "pages/bitrate_presets_page.slint";
-import { BitratePresetEditPage }        from "pages/bitrate_preset_edit_page.slint";
+import {
+    BitratePresetEditPage,
+}        from "pages/bitrate_preset_edit_page.slint";
 import { CameraPage }                   from "pages/camera_page.slint";
 import { QuickActionsPage }             from "pages/quick_actions_page.slint";
 import { CastHistoryPage }              from "pages/cast_history_page.slint";
-import { CastHistoryDetailPage }        from "pages/cast_history_detail_page.slint";
+import {
+    CastHistoryDetailPage,
+}        from "pages/cast_history_detail_page.slint";
 import { RecordingPage }                from "pages/recording_page.slint";
 import { PairingPage }                  from "pages/pairing_page.slint";
 import { ReceiverRenamePage }           from "pages/receiver_rename_page.slint";
@@ -88,9 +110,19 @@ import { DebugVideoPage }               from "pages/debug_video_page.slint";
 import { NetworkPage }                  from "pages/network_page.slint";
 import { MixerPage }                    from "pages/mixer_page.slint";
 import { MediaBackendPage }             from "pages/media_backend_page.slint";
-import { TestFunctionalityPage }        from "pages/test_functionality_page.slint";
-import { CameraRtmpStreamPage }         from "pages/camera_rtmp_stream_page.slint";
+import {
+    TestFunctionalityPage,
+}        from "pages/test_functionality_page.slint";
+import {
+    CameraRtmpStreamPage,
+}         from "pages/camera_rtmp_stream_page.slint";
 import { RtmpStreamWizardPage }         from "pages/rtmp_wizard_page.slint";
+import {
+    ProtocolRtmpSettingsPage,
+}     from "pages/protocol_rtmp_settings_page.slint";
+import {
+    ProtocolSrtSettingsPage,
+}      from "pages/protocol_srt_settings_page.slint";
 import { Theme } from "theme.slint";
 import { CastControlBar } from "components/control_bar.slint";
 import { InfoBanner } from "components/info_banner.slint";
@@ -99,7 +131,10 @@ import { LockOverlay } from "components/lock_overlay.slint";
 import { StealthOverlay } from "components/stealth_overlay.slint";
 import { SnapshotCountdown } from "components/snapshot_countdown.slint";
 import { CameraHud, CameraHudMetrics } from "components/camera_hud.slint";
-import { StreamLeftOverlay, StreamRightBadges } from "components/stream_status_overlay.slint";
+import {
+    StreamLeftOverlay,
+    StreamRightBadges,
+} from "components/stream_status_overlay.slint";
 import { LifecycleMode } from "bridge.slint";
 
 // ── Root window ───────────────────────────────────────────────────────────────
@@ -112,10 +147,10 @@ export component MainWindow inherits Window {
     // Safe-area insets don't change at runtime on this portrait-only app, so
     // init-time population is sufficient.  Clamping logic lives in SafeArea.
     init => {
-        SafeArea.raw-top    = root.safe-area-insets.top;
+        SafeArea.raw-top = root.safe-area-insets.top;
         SafeArea.raw-bottom = root.safe-area-insets.bottom;
-        SafeArea.raw-left   = root.safe-area-insets.left;
-        SafeArea.raw-right  = root.safe-area-insets.right;
+        SafeArea.raw-left = root.safe-area-insets.left;
+        SafeArea.raw-right = root.safe-area-insets.right;
     }
 
     back-key-scope := FocusScope {
@@ -161,7 +196,10 @@ export component MainWindow inherits Window {
                 background: transparent;
                 clip: false;
 
-                CastControlBar { width: parent.width; height: parent.height; }
+                CastControlBar {
+                    width: parent.width;
+                    height: parent.height;
+                }
 
                 if PanelBridge.active == Panel.none: CameraHud {
                     x: parent.width - CameraHudMetrics.bar-width - Theme.padding-screen;
@@ -174,49 +212,55 @@ export component MainWindow inherits Window {
         // PanelHost owns the safe-area inset math; each panel inside needs no
         // y / height wiring of its own.
         PanelHost {
-            if PanelBridge.active == Panel.settings:            FullSettingsPage        { }
-            if PanelBridge.active == Panel.debug:               FullDebugPage           { }
-            if PanelBridge.active == Panel.codec-test:          CodecTestPage           { }
-            if PanelBridge.active == Panel.codec-perf:          CodecPerfPage           { }
-            if PanelBridge.active == Panel.backup-reset:        BackupResetPage         { }
-            if PanelBridge.active == Panel.audio:               AudioPage               { }
-            if PanelBridge.active == Panel.camera:              CameraPage              { }
-            if PanelBridge.active == Panel.quick-actions:       QuickActionsPage        { }
-            if PanelBridge.active == Panel.cast-history:        CastHistoryPage         { }
-            if PanelBridge.active == Panel.cast-history-detail: CastHistoryDetailPage   { }
-            if PanelBridge.active == Panel.recording:           RecordingPage           { }
+            if PanelBridge.active == Panel.settings:            FullSettingsPage { }
+            if PanelBridge.active == Panel.debug:               FullDebugPage { }
+            if PanelBridge.active == Panel.codec-test:          CodecTestPage { }
+            if PanelBridge.active == Panel.codec-perf:          CodecPerfPage { }
+            if PanelBridge.active == Panel.backup-reset:        BackupResetPage { }
+            if PanelBridge.active == Panel.audio:               AudioPage { }
+            if PanelBridge.active == Panel.camera:              CameraPage { }
+            if PanelBridge.active == Panel.quick-actions:       QuickActionsPage { }
+            if PanelBridge.active == Panel.cast-history:        CastHistoryPage { }
+            if PanelBridge.active == Panel.cast-history-detail: CastHistoryDetailPage { }
+            if PanelBridge.active == Panel.recording:           RecordingPage { }
             if PanelBridge.active == Panel.pairing: PairingPage {
-                close => { PanelBridge.pop(); }
+                close => {
+                    PanelBridge.pop();
+                }
             }
             if PanelBridge.active == Panel.receiver-rename: ReceiverRenamePage {
                 current-name: Bridge.selected-receiver-name;
-                save(new-name) => { PanelBridge.pop(); }
-                cancel        => { PanelBridge.pop(); }
+                save(new-name) => {
+                    PanelBridge.pop();
+                }
+                cancel => {
+                    PanelBridge.pop();
+                }
             }
-            if PanelBridge.active == Panel.bitrate-presets:     BitratePresetsPage      { }
-            if PanelBridge.active == Panel.bitrate-preset-edit: BitratePresetEditPage   { }
-            if PanelBridge.active == Panel.macros:              MacrosPage              { }
-            if PanelBridge.active == Panel.macro-edit:          MacroEditPage           { }
-            if PanelBridge.active == Panel.debug-log:           DebugLogPage            { }
-            if PanelBridge.active == Panel.debug-video:         DebugVideoPage          { }
-            if PanelBridge.active == Panel.network:             NetworkPage             { }
-            if PanelBridge.active == Panel.mixer:               MixerPage               { }
-            if PanelBridge.active == Panel.media-backend:       MediaBackendPage        { }
-            if PanelBridge.active == Panel.test-functionality:  TestFunctionalityPage   { }
-            if PanelBridge.active == Panel.camera-rtmp-stream:  CameraRtmpStreamPage    { }
-            if PanelBridge.active == Panel.rtmp-wizard:          RtmpStreamWizardPage     { }
+            if PanelBridge.active == Panel.bitrate-presets:     BitratePresetsPage { }
+            if PanelBridge.active == Panel.bitrate-preset-edit: BitratePresetEditPage { }
+            if PanelBridge.active == Panel.macros:              MacrosPage { }
+            if PanelBridge.active == Panel.macro-edit:          MacroEditPage { }
+            if PanelBridge.active == Panel.debug-log:           DebugLogPage { }
+            if PanelBridge.active == Panel.debug-video:         DebugVideoPage { }
+            if PanelBridge.active == Panel.network:             NetworkPage { }
+            if PanelBridge.active == Panel.mixer:               MixerPage { }
+            if PanelBridge.active == Panel.media-backend:       MediaBackendPage { }
+            if PanelBridge.active == Panel.test-functionality:  TestFunctionalityPage { }
+            if PanelBridge.active == Panel.camera-rtmp-stream:  CameraRtmpStreamPage { }
+            if PanelBridge.active == Panel.rtmp-wizard:          RtmpStreamWizardPage { }
+            if PanelBridge.active == Panel.protocol-rtmp-settings: ProtocolRtmpSettingsPage { }
+            if PanelBridge.active == Panel.protocol-srt-settings:  ProtocolSrtSettingsPage { }
         }
 
         // ── Stream status overlays (top-left + top-right) ────────────────────────
         // Only during active streaming states; hidden when disconnected/no panel.
-        if PanelBridge.active == Panel.none
-                && Bridge.app-state != AppState.Disconnected: StreamLeftOverlay {
+        if PanelBridge.active == Panel.none && Bridge.app-state != AppState.Disconnected: StreamLeftOverlay {
             x: 0;
             y: SafeArea.top + 8px;
             width: parent.width / 2;
         }
-        if PanelBridge.active == Panel.none
-                && Bridge.app-state != AppState.Disconnected: StreamRightBadges {
+        if PanelBridge.active == Panel.none && Bridge.app-state != AppState.Disconnected: StreamRightBadges {
             x: 0;
             y: SafeArea.top + 8px;
             width: parent.width;

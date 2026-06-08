@@ -1,0 +1,264 @@
+// ui/pages/protocol_rtmp_settings_page.slint
+// Moblin analogue: View/Settings/Streams/Stream/Rtmp/StreamRtmpSettingsView.swift
+import { Theme } from "../theme.slint";
+import { Bridge, Panel, MixerState } from "../bridge.slint";
+import { PanelBridge } from "../state/panel_bridge.slint";
+import { PanelHeader } from "../components/panel_chrome.slint";
+import {
+    SettingsValueRow,
+    RowColors,
+} from "../components/settings_rows.slint";
+import { Switch } from "../slintcn/components/switch.slint";
+import { Badge, BadgeVariant } from "../slintcn/components/badge.slint";
+import {
+    Button,
+    ButtonVariant,
+    ButtonSize,
+} from "../slintcn/components/button.slint";
+import {
+    Card,
+    CardVariant,
+    CardPadding,
+} from "../slintcn/components/card.slint";
+
+export component ProtocolRtmpSettingsPage inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+
+    in-out property <bool> adaptive-bitrate: false;
+    in-out property <bool> reconnect-on-disconnect: true;
+    in-out property <bool> show-stream-key: false;
+
+    forward-focus: scope;
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                PanelBridge.pop();
+                return accept;
+            }
+            return reject;
+        }
+
+        VerticalLayout {
+            PanelHeader {
+                title: @tr("RTMP");
+                close-clicked => {
+                    PanelBridge.pop();
+                }
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                viewport-height: body.preferred-height;
+
+                body := VerticalLayout {
+                    padding: Theme.padding-screen;
+                    spacing: Theme.spacing-loose;
+                    alignment: start;
+
+                    Text {
+                        text: @tr("CONNECTION");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 1px;
+
+                            SettingsValueRow {
+                                title: @tr("Server URL");
+                                value: Bridge.cam-rtmp-url != "" ? Bridge.cam-rtmp-url : @tr("Not set");
+                                clicked => {
+                                    PanelBridge.push(Panel.camera-rtmp-stream);
+                                }
+                            }
+
+                            Rectangle {
+                                height: Theme.row-height;
+                                background: key-ta.pressed ? RowColors.pressed : RowColors.normal;
+
+                                key-ta := TouchArea {
+                                    clicked => {
+                                        root.show-stream-key = !root.show-stream-key;
+                                    }
+                                    HorizontalLayout {
+                                        padding-left: Theme.padding-screen;
+                                        padding-right: Theme.padding-screen;
+                                        spacing: Theme.spacing-default;
+                                        alignment: stretch;
+
+                                        Text {
+                                            text: @tr("Stream Key");
+                                            color: Theme.text-primary;
+                                            font-size: Theme.font-size-body;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+
+                                        Text {
+                                            text: root.show-stream-key ? (Bridge.cam-rtmp-stream-key != "" ? Bridge.cam-rtmp-stream-key : @tr("Not set")) : "●●●●●●●●";
+                                            color: Theme.text-secondary;
+                                            font-size: Theme.font-size-body;
+                                            vertical-alignment: center;
+                                        }
+
+                                        Text {
+                                            text: root.show-stream-key ? @tr("Hide") : @tr("Show");
+                                            color: Theme.accent;
+                                            font-size: Theme.font-size-label;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("RELIABILITY");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 1px;
+                            Rectangle {
+                                height: Theme.row-height;
+                                background: RowColors.normal;
+                                HorizontalLayout {
+                                    padding-left: Theme.padding-screen;
+                                    padding-right: Theme.padding-screen;
+                                    alignment: stretch;
+                                    Text {
+                                        text: @tr("Reconnect on disconnect");
+                                        color: Theme.text-primary;
+                                        font-size: Theme.font-size-body;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                    }
+
+                                    Switch {
+                                        checked <=> root.reconnect-on-disconnect;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("PERFORMANCE");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 1px;
+                            Rectangle {
+                                height: Theme.row-height;
+                                background: RowColors.normal;
+                                opacity: 0.45;
+                                HorizontalLayout {
+                                    padding-left: Theme.padding-screen;
+                                    padding-right: Theme.padding-screen;
+                                    alignment: stretch;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        horizontal-stretch: 1;
+                                        Text {
+                                            text: @tr("Adaptive bitrate");
+                                            color: Theme.text-primary;
+                                            font-size: Theme.font-size-body;
+                                        }
+
+                                        Text {
+                                            text: @tr("Available in v0.2.0");
+                                            color: Theme.text-disabled;
+                                            font-size: Theme.font-size-label;
+                                        }
+                                    }
+
+                                    Switch {
+                                        checked: root.adaptive-bitrate;
+                                        disabled: true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if Bridge.cam-rtmp-state != MixerState.idle: VerticalLayout {
+                        spacing: Theme.spacing-default;
+
+                        Text {
+                            text: @tr("STREAM STATUS");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                            font-weight: 600;
+                        }
+
+                        Card {
+                            variant: CardVariant.solid;
+                            card-padding: CardPadding.none;
+                            clip: true;
+                            VerticalLayout {
+                                spacing: 1px;
+                                Rectangle {
+                                    height: Theme.row-height;
+                                    background: RowColors.normal;
+                                    HorizontalLayout {
+                                        padding-left: Theme.padding-screen;
+                                        padding-right: Theme.padding-screen;
+                                        alignment: stretch;
+                                        Text {
+                                            text: @tr("State");
+                                            color: Theme.text-primary;
+                                            font-size: Theme.font-size-body;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+
+                                        Badge {
+                                            text: Bridge.cam-rtmp-state == MixerState.running ? @tr("Live") : @tr("Connecting…");
+                                            variant: Bridge.cam-rtmp-state == MixerState.running ? BadgeVariant.default : BadgeVariant.secondary;
+                                        }
+                                    }
+                                }
+
+                                if Bridge.cam-rtmp-error-text != "": SettingsValueRow {
+                                    title: @tr("Error");
+                                    value: Bridge.cam-rtmp-error-text;
+                                    show-chevron: false;
+                                }
+                            }
+                        }
+
+                        if Bridge.cam-rtmp-state == MixerState.running: Button {
+                            text: @tr("Stop Stream");
+                            variant: ButtonVariant.destructive;
+                            size: ButtonSize.lg;
+                            clicked => {
+                                Bridge.stop-camera-rtmp-stream();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

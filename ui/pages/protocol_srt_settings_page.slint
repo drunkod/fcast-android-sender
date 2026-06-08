@@ -1,0 +1,408 @@
+// ui/pages/protocol_srt_settings_page.slint
+// Moblin analogue: View/Settings/Streams/Stream/Srt/StreamSrtSettingsView.swift
+import { Theme } from "../theme.slint";
+import { Bridge, Panel, MixerState } from "../bridge.slint";
+import { PanelBridge } from "../state/panel_bridge.slint";
+import { PanelHeader } from "../components/panel_chrome.slint";
+import {
+    SettingsValueRow,
+    RowColors,
+} from "../components/settings_rows.slint";
+import { Input } from "../slintcn/components/input.slint";
+import { Switch } from "../slintcn/components/switch.slint";
+import { Badge, BadgeVariant } from "../slintcn/components/badge.slint";
+import {
+    Button,
+    ButtonVariant,
+    ButtonSize,
+} from "../slintcn/components/button.slint";
+import {
+    Card,
+    CardVariant,
+    CardPadding,
+} from "../slintcn/components/card.slint";
+
+component CyclerRow inherits Rectangle {
+    in property <string> title;
+    in property <[string]> options;
+    in-out property <int> idx: 0;
+    callback changed(int);
+
+    height: Theme.row-height;
+    background: ta.pressed ? RowColors.pressed : RowColors.normal;
+
+    function advance() {
+        root.idx = Math.mod(root.idx + 1, root.options.length);
+        root.changed(root.idx);
+    }
+
+    accessible-role: button;
+    accessible-label: root.title + ", " + root.options[root.idx];
+    accessible-action-default => {
+        root.advance();
+    }
+
+    ta := TouchArea {
+        clicked => {
+            root.advance();
+        }
+        HorizontalLayout {
+            padding-left: Theme.padding-screen;
+            padding-right: Theme.padding-screen;
+            spacing: Theme.spacing-default;
+            alignment: stretch;
+            Text {
+                text: root.title;
+                color: Theme.text-primary;
+                font-size: Theme.font-size-body;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Text {
+                text: root.options[root.idx];
+                color: Theme.text-secondary;
+                font-size: Theme.font-size-body;
+                vertical-alignment: center;
+            }
+
+            Text {
+                text: "›";
+                color: Theme.text-disabled;
+                font-size: Theme.font-size-body;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component ProtocolSrtSettingsPage inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+
+    in-out property <string> draft-uri: Bridge.srt-destination.uri;
+    in-out property <int> latency-idx: 1;
+    in-out property <int> encryption-idx: 0;
+    in-out property <bool> show-passphrase: false;
+    in-out property <string> draft-passphrase: Bridge.srt-destination-passphrase;
+    in-out property <bool> big-packets: true;
+
+    property <[string]> latency-labels: ["120 ms", "200 ms", "500 ms", "1000 ms", "2000 ms", "4000 ms"];
+    property <[int]> latency-ms-values: [120, 200, 500, 1000, 2000, 4000];
+    property <[string]> encryption-labels: ["None", "AES-128", "AES-192", "AES-256"];
+
+    forward-focus: scope;
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                PanelBridge.pop();
+                return accept;
+            }
+            return reject;
+        }
+
+        VerticalLayout {
+            PanelHeader {
+                title: @tr("SRT");
+                close-clicked => {
+                    PanelBridge.pop();
+                }
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                viewport-height: body.preferred-height;
+
+                body := VerticalLayout {
+                    padding: Theme.padding-screen;
+                    spacing: Theme.spacing-loose;
+                    alignment: start;
+
+                    Text {
+                        text: @tr("CONNECTION");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 1px;
+                            Rectangle {
+                                height: 72px;
+                                background: RowColors.normal;
+                                VerticalLayout {
+                                    padding: Theme.padding-screen;
+                                    spacing: 4px;
+                                    alignment: center;
+                                    Text {
+                                        text: @tr("SRT URL");
+                                        color: Theme.text-secondary;
+                                        font-size: Theme.font-size-label;
+                                    }
+
+                                    Input {
+                                        text <=> root.draft-uri;
+                                        placeholder: "srt://media.example.com:9000";
+                                        edited(v) => {
+                                            root.draft-uri = v;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("TRANSPORT");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 1px;
+
+                            CyclerRow {
+                                title: @tr("Latency");
+                                options: root.latency-labels;
+                                idx <=> root.latency-idx;
+                                changed(i) => {
+                                    Bridge.srt-destination.latency-ms = root.latency-ms-values[i];
+                                }
+                            }
+
+                            CyclerRow {
+                                title: @tr("Encryption");
+                                options: root.encryption-labels;
+                                idx <=> root.encryption-idx;
+                                changed(i) => {
+                                    Bridge.srt-destination-pbkeylen-idx = i;
+                                }
+                            }
+
+                            if root.encryption-idx > 0: Rectangle {
+                                height: 80px;
+                                background: RowColors.normal;
+                                VerticalLayout {
+                                    padding: Theme.padding-screen;
+                                    spacing: 4px;
+                                    alignment: center;
+                                    HorizontalLayout {
+                                        spacing: Theme.spacing-default;
+                                        Text {
+                                            text: @tr("Passphrase");
+                                            color: Theme.text-secondary;
+                                            font-size: Theme.font-size-label;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+
+                                        TouchArea {
+                                            width: 40px;
+                                            height: 20px;
+                                            clicked => {
+                                                root.show-passphrase = !root.show-passphrase;
+                                            }
+                                            Text {
+                                                text: root.show-passphrase ? @tr("Hide") : @tr("Show");
+                                                color: Theme.accent;
+                                                font-size: Theme.font-size-label;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+
+                                    Input {
+                                        text <=> root.draft-passphrase;
+                                        placeholder: @tr("10–79 characters");
+                                        password: !root.show-passphrase;
+                                        edited(v) => {
+                                            root.draft-passphrase = v;
+                                            Bridge.srt-destination-passphrase = v;
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                height: Theme.row-height;
+                                background: RowColors.normal;
+                                HorizontalLayout {
+                                    padding-left: Theme.padding-screen;
+                                    padding-right: Theme.padding-screen;
+                                    alignment: stretch;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        horizontal-stretch: 1;
+                                        Text {
+                                            text: @tr("Big packets");
+                                            color: Theme.text-primary;
+                                            font-size: Theme.font-size-body;
+                                        }
+
+                                        Text {
+                                            text: @tr("7 TS packets per SRT packet; disable if hotspot drops packets");
+                                            color: Theme.text-disabled;
+                                            font-size: Theme.font-size-label;
+                                        }
+                                    }
+
+                                    Switch {
+                                        checked <=> root.big-packets;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("BITRATE");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 1px;
+                            Rectangle {
+                                height: Theme.row-height;
+                                background: RowColors.normal;
+                                opacity: 0.45;
+                                HorizontalLayout {
+                                    padding-left: Theme.padding-screen;
+                                    padding-right: Theme.padding-screen;
+                                    alignment: stretch;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        horizontal-stretch: 1;
+                                        Text {
+                                            text: @tr("Adaptive bitrate");
+                                            color: Theme.text-primary;
+                                            font-size: Theme.font-size-body;
+                                        }
+
+                                        Text {
+                                            text: @tr("FastIRL algorithm — available in v0.2.0");
+                                            color: Theme.text-disabled;
+                                            font-size: Theme.font-size-label;
+                                        }
+                                    }
+
+                                    Switch {
+                                        disabled: true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        text: @tr("Save");
+                        variant: ButtonVariant.default;
+                        size: ButtonSize.lg;
+                        clicked => {
+                            Bridge.srt-destination.uri = root.draft-uri;
+                            Bridge.save-srt-destination-config();
+                        }
+                    }
+
+                    if Bridge.srt-destination.state != MixerState.idle: VerticalLayout {
+                        spacing: Theme.spacing-default;
+
+                        Text {
+                            text: @tr("STREAM STATUS");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                            font-weight: 600;
+                        }
+
+                        Card {
+                            variant: CardVariant.solid;
+                            card-padding: CardPadding.none;
+                            clip: true;
+                            VerticalLayout {
+                                spacing: 1px;
+                                Rectangle {
+                                    height: Theme.row-height;
+                                    background: RowColors.normal;
+                                    HorizontalLayout {
+                                        padding-left: Theme.padding-screen;
+                                        padding-right: Theme.padding-screen;
+                                        alignment: stretch;
+                                        Text {
+                                            text: @tr("State");
+                                            color: Theme.text-primary;
+                                            font-size: Theme.font-size-body;
+                                            vertical-alignment: center;
+                                            horizontal-stretch: 1;
+                                        }
+
+                                        Badge {
+                                            text: Bridge.srt-destination.state == MixerState.running ? @tr("Live") : @tr("Connecting…");
+                                            variant: Bridge.srt-destination.state == MixerState.running ? BadgeVariant.default : BadgeVariant.secondary;
+                                        }
+                                    }
+                                }
+
+                                if Bridge.srt-destination.last-error != "": SettingsValueRow {
+                                    title: @tr("Error");
+                                    value: Bridge.srt-destination.last-error;
+                                    show-chevron: false;
+                                }
+                            }
+                        }
+
+                        if Bridge.srt-destination.state == MixerState.running: Button {
+                            text: @tr("Stop Stream");
+                            variant: ButtonVariant.destructive;
+                            size: ButtonSize.lg;
+                            clicked => {
+                                Bridge.stop-srt-destination();
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("PIPELINE");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 1px;
+                            SettingsValueRow {
+                                title: @tr("Video");
+                                value: "appsrc → videoconvert → h264enc → h264parse → mpegtsmux → srtsink";
+                                show-chevron: false;
+                            }
+
+                            SettingsValueRow {
+                                title: @tr("Audio");
+                                value: "appsrc → audioconvert → audioresample → avenc_aac → mpegtsmux";
+                                show-chevron: false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

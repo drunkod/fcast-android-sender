@@ -108,6 +108,18 @@ impl DestinationPipelineProfile {
                 elements.extend(["videoconvert", "basewebrtcsink"]);
                 let _ = audio;
             }
+            DestinationFamily::Srt { .. } => {
+                elements.extend([
+                    "mpegtsmux",
+                    "srtsink",
+                    "videoconvert",
+                    "h264enc",
+                    "h264parse",
+                    "audioconvert",
+                    "audioresample",
+                    "avenc_aac",
+                ]);
+            }
         }
 
         if !audio {
@@ -594,17 +606,18 @@ impl DestinationNode {
         };
 
         // RTMP always uses an embedded mic/silence source; external audio is not mixed in.
-        let audio_appsrc = if self.audio_enabled && !matches!(self.family, DestinationFamily::Rtmp { .. }) {
-            let appsrc = Self::make_appsrc(&self.id, "audio")?;
-            pipeline
-                .add(appsrc.upcast_ref::<gst::Element>())
-                .map_err(|err| {
-                    format!("Failed to add audio appsrc to destination pipeline: {err:?}")
-                })?;
-            Some(appsrc)
-        } else {
-            None
-        };
+        let audio_appsrc =
+            if self.audio_enabled && !matches!(self.family, DestinationFamily::Rtmp { .. }) {
+                let appsrc = Self::make_appsrc(&self.id, "audio")?;
+                pipeline
+                    .add(appsrc.upcast_ref::<gst::Element>())
+                    .map_err(|err| {
+                        format!("Failed to add audio appsrc to destination pipeline: {err:?}")
+                    })?;
+                Some(appsrc)
+            } else {
+                None
+            };
 
         match &self.family {
             DestinationFamily::Rtmp { uri } => {
@@ -777,15 +790,7 @@ impl DestinationNode {
                     })?;
 
                     gst::Element::link_many(
-                        [
-                            &audiosrc,
-                            &aconv,
-                            &aresample,
-                            &aenc,
-                            &aenc_queue,
-                            &mux,
-                        ]
-                        .as_slice(),
+                        [&audiosrc, &aconv, &aresample, &aenc, &aenc_queue, &mux].as_slice(),
                     )
                     .map_err(|err| format!("Failed to link rtmp audio chain: {err:?}"))?;
                 }
@@ -863,6 +868,98 @@ impl DestinationNode {
 
                 mux.link(&sink)
                     .map_err(|err| format!("Failed to link mpegtsmux to udpsink: {err:?}"))?;
+            }
+            DestinationFamily::Srt {
+                uri,
+                latency,
+                passphrase,
+                pbkeylen,
+            } => {
+                let mux = Self::make_element("mpegtsmux", None)?;
+                let sink = Self::make_element("srtsink", None)?;
+
+                pipeline
+                    .add(&mux)
+                    .map_err(|err| format!("Failed to add mpegtsmux to srt pipeline: {err:?}"))?;
+                pipeline
+                    .add(&sink)
+                    .map_err(|err| format!("Failed to add srtsink to srt pipeline: {err:?}"))?;
+
+                if mux.has_property("alignment") {
+                    mux.set_property("alignment", 7i32);
+                }
+
+                sink.set_property("uri", uri.clone());
+                sink.set_property("latency", *latency);
+
+                if sink.has_property("wait-for-connection") {
+                    sink.set_property("wait-for-connection", false);
+                }
+
+                if let (Some(pass), Some(keylen)) = (passphrase.as_deref(), pbkeylen) {
+                    sink.set_property("passphrase", pass);
+                    sink.set_property("pbkeylen", *keylen);
+                }
+
+                if let Some(appsrc) = video_appsrc.as_ref() {
+                    let vconv = Self::make_element("videoconvert", None)?;
+                    let venc_chain = Self::select_video_encoder(&self.id)?;
+                    let vparse = Self::make_element("h264parse", None)?;
+
+                    pipeline.add(&vconv).map_err(|err| {
+                        format!("Failed to add videoconvert to srt pipeline: {err:?}")
+                    })?;
+                    Self::add_video_encoder_chain(&pipeline, &venc_chain, "srt pipeline")?;
+                    pipeline.add(&vparse).map_err(|err| {
+                        format!("Failed to add h264parse to srt pipeline: {err:?}")
+                    })?;
+
+                    gst::Element::link_many(
+                        [appsrc.upcast_ref::<gst::Element>(), &vconv].as_slice(),
+                    )
+                    .map_err(|err| format!("Failed to link srt video pre-processing: {err:?}"))?;
+
+                    Self::link_video_encoder_chain(
+                        &vconv,
+                        &venc_chain,
+                        &vparse,
+                        "srt video encoder chain",
+                    )?;
+
+                    gst::Element::link_many([&vparse, &mux].as_slice())
+                        .map_err(|err| format!("Failed to link srt video output: {err:?}"))?;
+                }
+
+                if let Some(appsrc) = audio_appsrc.as_ref() {
+                    let aconv = Self::make_element("audioconvert", None)?;
+                    let aresample = Self::make_element("audioresample", None)?;
+                    let aenc = Self::make_element("avenc_aac", None)?;
+
+                    pipeline.add(&aconv).map_err(|err| {
+                        format!("Failed to add audioconvert to srt pipeline: {err:?}")
+                    })?;
+                    pipeline.add(&aresample).map_err(|err| {
+                        format!("Failed to add audioresample to srt pipeline: {err:?}")
+                    })?;
+                    pipeline.add(&aenc).map_err(|err| {
+                        format!("Failed to add avenc_aac to srt pipeline: {err:?}")
+                    })?;
+
+                    gst::Element::link_many(
+                        [
+                            appsrc.upcast_ref::<gst::Element>(),
+                            &aconv,
+                            &aresample,
+                            &aenc,
+                            &mux,
+                        ]
+                        .as_slice(),
+                    )
+                    .map_err(|err| format!("Failed to link srt audio chain: {err:?}"))?;
+                }
+
+                mux.link(&sink)
+                    .map_err(|err| format!("Failed to link mpegtsmux to srtsink: {err:?}"))?;
             }
             DestinationFamily::LocalFile {
                 base_name,
@@ -1657,6 +1754,56 @@ mod tests {
         node.refresh().unwrap();
         assert!(node.whep_bound_port_v4.is_none());
         assert!(node.whep_bound_port_v6.is_none());
+    }
+
+    #[test]
+    fn srt_profile_lists_srtsink_and_mpegtsmux() {
+        let family = DestinationFamily::Srt {
+            uri: "srt://10.0.0.1:9000".into(),
+            latency: 200,
+            passphrase: None,
+            pbkeylen: None,
+        };
+        let profile = DestinationPipelineProfile::from_family(&family, true, true);
+        assert!(
+            profile.elements.iter().any(|e| e == "srtsink"),
+            "srtsink missing"
+        );
+        assert!(
+            profile.elements.iter().any(|e| e == "mpegtsmux"),
+            "mpegtsmux missing"
+        );
+        assert!(
+            profile.elements.iter().any(|e| e == "h264parse"),
+            "h264parse missing"
+        );
+        assert!(
+            profile.elements.iter().any(|e| e == "avenc_aac"),
+            "avenc_aac missing"
+        );
+    }
+
+    #[test]
+    fn srt_profile_audio_disabled_removes_audio_elements() {
+        let family = DestinationFamily::Srt {
+            uri: "srt://10.0.0.1:9000".into(),
+            latency: 200,
+            passphrase: None,
+            pbkeylen: None,
+        };
+        let profile = DestinationPipelineProfile::from_family(&family, false, true);
+        assert!(
+            !profile.elements.iter().any(|e| e == "audioconvert"),
+            "audioconvert must be removed when audio=false"
+        );
+        assert!(
+            !profile.elements.iter().any(|e| e == "audioresample"),
+            "audioresample must be removed when audio=false"
+        );
+        assert!(
+            profile.elements.iter().any(|e| e == "srtsink"),
+            "srtsink must survive audio=false"
+        );
     }
 
     #[test]

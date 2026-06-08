@@ -42,6 +42,15 @@ fn default_true() -> bool {
     true
 }
 
+/// Default SRT end-to-end latency in milliseconds.
+///
+/// 200 ms matches the `gst-launch` `srtsink` default and is a safe starting
+/// point for contribution feeds. Both SRT endpoints must agree within ±50 %;
+/// SRT silently upgrades both sides to the larger configured value.
+fn default_srt_latency() -> i32 {
+    200
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ControlMode {
@@ -203,6 +212,22 @@ pub enum DestinationFamily {
     Whep {
         #[serde(default)]
         server_port: u16,
+    },
+    Srt {
+        /// Full SRT URI, e.g. `srt://host:port` (caller) or
+        /// `srt://0.0.0.0:port?mode=listener` (inbound). IPv6 needs brackets:
+        /// `srt://[fe80::1]:1234`.
+        uri: String,
+        /// SRT end-to-end latency in milliseconds. Default 200 ms.
+        #[serde(default = "default_srt_latency")]
+        latency: i32,
+        /// AES passphrase (10–79 ASCII chars). Must be set together with
+        /// `pbkeylen`; omitting either disables encryption silently.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        passphrase: Option<String>,
+        /// AES key length in bytes: 16 (AES-128), 24 (AES-192), 32 (AES-256).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pbkeylen: Option<i32>,
     },
 }
 
@@ -401,6 +426,73 @@ mod tests {
     }
 
     #[test]
+    fn srt_destination_defaults_latency_when_omitted() {
+        let cmd: Command = serde_json::from_str(
+            r#"{"createdestination":{"id":"s1","family":{"Srt":{"uri":"srt://10.0.0.1:9000"}}}}"#,
+        )
+        .unwrap();
+        match cmd {
+            Command::CreateDestination {
+                family:
+                    DestinationFamily::Srt {
+                        latency,
+                        passphrase,
+                        pbkeylen,
+                        ..
+                    },
+                ..
+            } => {
+                assert_eq!(latency, 200, "default latency must be 200 ms");
+                assert!(passphrase.is_none(), "passphrase should be absent");
+                assert!(pbkeylen.is_none(), "pbkeylen should be absent");
+            }
+            other => panic!("expected Srt destination, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn srt_destination_with_encryption_roundtrip() {
+        let original = DestinationFamily::Srt {
+            uri: "srt://10.0.0.1:9000".to_string(),
+            latency: 500,
+            passphrase: Some("supersecretphrase1".to_string()),
+            pbkeylen: Some(32),
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let decoded: DestinationFamily = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn srt_destination_passphrase_absent_omitted_from_wire() {
+        let family = DestinationFamily::Srt {
+            uri: "srt://10.0.0.1:9000".to_string(),
+            latency: 200,
+            passphrase: None,
+            pbkeylen: None,
+        };
+        let json = serde_json::to_string(&family).unwrap();
+        assert!(
+            !json.contains("passphrase"),
+            "passphrase key must be absent"
+        );
+        assert!(!json.contains("pbkeylen"), "pbkeylen key must be absent");
+    }
+
+    #[test]
+    fn srt_destination_ipv6_uri_roundtrip() {
+        let family = DestinationFamily::Srt {
+            uri: "srt://[fe80::1]:1234".to_string(),
+            latency: 200,
+            passphrase: None,
+            pbkeylen: None,
+        };
+        let encoded = serde_json::to_string(&family).unwrap();
+        let decoded: DestinationFamily = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded, family);
+    }
+
+    #[test]
     fn destination_family_roundtrip_includes_all_variants() {
         let families = [
             DestinationFamily::Rtmp {
@@ -414,6 +506,12 @@ mod tests {
                 max_size_time: Some(5_000),
             },
             DestinationFamily::LocalPlayback,
+            DestinationFamily::Srt {
+                uri: "srt://localhost:9000".to_string(),
+                latency: 200,
+                passphrase: None,
+                pbkeylen: None,
+            },
         ];
 
         for family in families {

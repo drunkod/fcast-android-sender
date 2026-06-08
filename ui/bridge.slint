@@ -83,15 +83,15 @@ export enum QuickActionKind {
 }
 
 export struct MacroStep {
-    kind:  QuickActionKind,
+    kind: QuickActionKind,
     label: string,
 }
 
 export struct Macro {
-    id:       string,
-    name:     string,
-    steps:    [MacroStep],
-    enabled:  bool,
+    id: string,
+    name: string,
+    steps: [MacroStep],
+    enabled: bool,
 }
 
 export enum LogLevel {
@@ -104,10 +104,10 @@ export enum LogLevel {
 }
 
 export struct LogEntry {
-    level:     LogLevel,
+    level: LogLevel,
     timestamp: string,
-    target:    string,
-    message:   string,
+    target: string,
+    message: string,
 }
 
 export enum Panel {
@@ -137,49 +137,51 @@ export enum Panel {
     test-functionality,
     camera-rtmp-stream,
     rtmp-wizard,
+    protocol-rtmp-settings,
+    protocol-srt-settings,
 }
 
 export struct QuickAction {
-    kind:      QuickActionKind,
-    macro-id:   string,
-    custom-id:  string,
-    title:     string,
-    enabled:   bool,
-    active:    bool,
+    kind: QuickActionKind,
+    macro-id: string,
+    custom-id: string,
+    title: string,
+    enabled: bool,
+    active: bool,
 }
 
 export enum StatusSeverity { info, warning, error }
 
 export struct StatusItem {
-    label:    string,
-    value:    string,
+    label: string,
+    value: string,
     severity: StatusSeverity,
     icon-glyph: string,
 }
 
 export struct ReceiverItem {
-    id:      string,
-    name:    string,
+    id: string,
+    name: string,
     address: string,
-    ip:      string,
-    port:    int,
-    kind:    string,
+    ip: string,
+    port: int,
+    kind: string,
     is-default: bool,
 }
 
 export struct BitratePreset {
-    id:           string,
-    name:         string,
+    id: string,
+    name: string,
     bitrate-kbps: int,
-    active:       bool,
+    active: bool,
 }
 
 export struct CastHistoryEntry {
-    id:         string,
-    receiver:   string,
+    id: string,
+    receiver: string,
     started-at: string,
     duration-s: int,
-    status:     string,
+    status: string,
 }
 
 export enum NetworkKind {
@@ -191,42 +193,49 @@ export enum NetworkKind {
 }
 
 export struct NetworkInterface {
-    name:       string,
-    kind:       NetworkKind,
+    name: string,
+    kind: NetworkKind,
     address-v4: string,
     address-v6: string,
-    enabled:    bool,
+    enabled: bool,
 }
 
 export struct SrtSource {
-    slot-id:    string,
-    enabled:    bool,
-    uri:        string,
+    slot-id: string,
+    enabled: bool,
+    uri: string,
     latency-ms: int,
-    stream-id:  string,
-    mix-alpha:  float,
+    stream-id: string,
+    mix-alpha: float,
     mix-zorder: int,
     mix-volume: float,
-    state:      MixerState,
+    state: MixerState,
     last-error: string,
 }
 
 export struct RtmpDestination {
-    node-id:    string,
-    enabled:    bool,
-    uri:        string,
+    node-id: string,
+    enabled: bool,
+    uri: string,
     stream-key: string,
-    state:      MixerState,
+    state: MixerState,
+    last-error: string,
+}
+
+export struct SrtDestination {
+    uri: string,
+    latency-ms: int,
+    state: MixerState,
     last-error: string,
 }
 
 export struct MixerCanvas {
-    node-id:     string,
-    width:       int,
-    height:      int,
+    node-id: string,
+    width: int,
+    height: int,
     sample-rate: int,
-    state:       MixerState,
-    last-error:  string,
+    state: MixerState,
+    last-error: string,
 }
 
 export global Bridge {
@@ -248,13 +257,13 @@ export global Bridge {
     in property <[LogEntry]> log-entries: [];
     callback clear-log-entries();
     out property <AppState> app-state: AppState.Disconnected;
-    in-out property <Panel>    active-panel: Panel.none;
+    in-out property <Panel> active-panel: Panel.none;
     // ── Banner (Phase 8 / Cluster F1) ───────────────────────────────────
     // Rust pushes a banner with severity; auto-hide is handled by
     // Rust's `flash_banner` helper (consumer is `components/info_banner.slint`).
-    in property <string>              banner-message:  "";
-    in-out property <bool>            banner-visible:  false;
-    in property <BannerSeverity>      banner-severity: BannerSeverity.info;
+    in property <string> banner-message:  "";
+    in-out property <bool> banner-visible:  false;
+    in property <BannerSeverity> banner-severity: BannerSeverity.info;
 
     // ── Macros (Phase 8 / Cluster C4) ───────────────────────────────────
     in property <[Macro]> macros: [];
@@ -262,9 +271,9 @@ export global Bridge {
     callback delete-macro(string);                            // (id)
     callback run-macro(string);                               // (macro-id)
 
-    in-out property <string>  macro-edit-id: "";   // "" means "new macro"
-    in-out property <string>  draft-macro-name: "";
-    in-out property <bool>    draft-macro-enabled: true;
+    in-out property <string> macro-edit-id: "";   // "" means "new macro"
+    in-out property <string> draft-macro-name: "";
+    in-out property <bool> draft-macro-enabled: true;
     in property <[MacroStep]> draft-macro-steps: [];
     callback load-draft-macro(string);                        // (macro-id)
     callback draft-add-step(kind: QuickActionKind);
@@ -285,7 +294,7 @@ export global Bridge {
     in-out property <bool> camera-tap-to-focus: true;
     in-out property <float> camera-zoom-level: 1.0;
     in-out property <bool> wifi-aware-enabled: false;
-    in-out property <string>   selected-history-id: "";
+    in-out property <string> selected-history-id: "";
     in property <[QuickAction]> quick-actions: [];
     callback move-bar-action(int, int);
     callback set-bar-action-enabled(int, bool);
@@ -310,7 +319,7 @@ export global Bridge {
 
     // ── Bitrate presets (Phase 8 / Cluster C1) ──────────────────────────
     in property <[BitratePreset]> presets: [];
-    in-out property <string>      selected-preset-id: "";   // for the edit-page route-back
+    in-out property <string> selected-preset-id: "";   // for the edit-page route-back
     callback save-preset(string, string, int);              // (id, name, kbps); id="" → new
     callback delete-preset(string);                         // (id)
     callback set-active-preset(string);                     // (id)
@@ -336,7 +345,6 @@ export global Bridge {
     callback exit-lifecycle();
     callback set-wifi-aware(bool);
 
-
     // ── Media backend selector callbacks (MVP-PHASE-12) ────────────────
     callback save-media-backend-settings();
     callback probe-media-backend();
@@ -347,7 +355,7 @@ export global Bridge {
     callback stop-gstpop-service();
     // Driven by Rust 1Hz poller while the Media Backend panel is visible.
     in-out property <string> gstpop-service-state: "stopped"; // "stopped"|"starting"|"running"|"error"
-    in-out property <bool>   gstpop-service-externally-owned: false;
+    in-out property <bool> gstpop-service-externally-owned: false;
 
     // ── Migration runtime service control (mirrors gst-pop) ─────────────
     callback start-migration-runtime-service();
@@ -409,27 +417,41 @@ export global Bridge {
     // ── Camera RTMP stream (new page) ─────────────────────────────────
     in-out property <string> cam-rtmp-url:             "";
     in-out property <string> cam-rtmp-stream-key:      "";
-    in property      <MixerState> cam-rtmp-state:      MixerState.idle;
-    in property      <string>     cam-rtmp-error-text: "";
-    in property      <bool>       cam-rtmp-camera-permission: false;
+    in property <MixerState> cam-rtmp-state:      MixerState.idle;
+    in property <string> cam-rtmp-error-text: "";
+    in property <bool> cam-rtmp-camera-permission: false;
 
     callback start-camera-rtmp-stream();
     callback stop-camera-rtmp-stream();
     callback start-camera-rtmp-preview();
     callback request-cam-rtmp-camera-permission();
     callback save-cam-rtmp-config();
+
+    in-out property <SrtDestination> srt-destination: {
+        uri:        "",
+        latency-ms: 200,
+        state:      MixerState.idle,
+        last-error: "",
+    };
+    in-out property <string> srt-destination-passphrase: "";
+    in-out property <int> srt-destination-pbkeylen-idx: 0;
+
+    callback start-srt-destination();
+    callback stop-srt-destination();
+    callback save-srt-destination-config();
+
     pure callback url-looks-valid(string) -> bool;
     // Stream wizard: scan QR to auto-configure RTMP URL + key then go live.
     callback scan-rtmp-qr();
     in-out property <bool> rtmp-qr-scanning: false;
 
     // ── Test functionality (test-functionality panel) ────────────────────
-    in-out property <int>    test-camera-idx:           1;
-    in-out property <int>    test-resolution-idx:       2;
-    in-out property <int>    test-framerate-idx:        1;
-    in-out property <bool>   test-camera-mirror:        false;
-    in-out property <bool>   test-camera-stabilization: true;
-    in-out property <float>  test-camera-zoom:          1.0;
+    in-out property <int> test-camera-idx:           1;
+    in-out property <int> test-resolution-idx:       2;
+    in-out property <int> test-framerate-idx:        1;
+    in-out property <bool> test-camera-mirror:        false;
+    in-out property <bool> test-camera-stabilization: true;
+    in-out property <float> test-camera-zoom:          1.0;
 
     in-out property <SrtSource> test-srt-source: {
         slot-id:    "test-srt",
@@ -444,17 +466,17 @@ export global Bridge {
         last-error: "",
     };
 
-    in-out property <string>  test-overlay-image-path: "";
-    in-out property <bool>    test-overlay-enabled:    false;
-    in-out property <float>   test-overlay-x:          0;
-    in-out property <float>   test-overlay-y:          0;
-    in-out property <float>   test-overlay-width:      320;
-    in-out property <float>   test-overlay-height:     180;
-    in-out property <float>   test-overlay-alpha:      1.0;
-    in-out property <int>     test-overlay-z-order:    10;
+    in-out property <string> test-overlay-image-path: "";
+    in-out property <bool> test-overlay-enabled:    false;
+    in-out property <float> test-overlay-x:          0;
+    in-out property <float> test-overlay-y:          0;
+    in-out property <float> test-overlay-width:      320;
+    in-out property <float> test-overlay-height:     180;
+    in-out property <float> test-overlay-alpha:      1.0;
+    in-out property <int> test-overlay-z-order:    10;
 
     in property <MixerState> test-state:      MixerState.idle;
-    in property <string>     test-error-text: "";
+    in property <string> test-error-text: "";
 
     callback start-test();
     callback stop-test();
@@ -470,7 +492,7 @@ export global Bridge {
     // Same report split into lines so the page can render it in a virtualised
     // ListView — a single huge Text in a Flickable janks on scroll.
     in property <[string]> codec-test-log-lines: [];
-    in property <bool>   codec-test-running: false;
+    in property <bool> codec-test-running: false;
     callback run-codec-test();        // full dump + quick-find + smoke test
     callback run-codec-dump-only();   // just the codec list dump (faster)
     callback run-codec-smoke-only();  // just the encoder smoke test
@@ -482,7 +504,7 @@ export global Bridge {
     in property <string> perf-test-log: "";
     // Same report split into lines for a virtualised ListView (smooth scroll).
     in property <[string]> perf-test-log-lines: [];
-    in property <bool>   perf-test-running: false;
+    in property <bool> perf-test-running: false;
     callback run-perf-test();
     callback run-perf-encode-only();
     callback run-perf-decode-only();
