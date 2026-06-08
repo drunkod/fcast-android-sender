@@ -68,6 +68,7 @@ import { SettingsPageView, FullSettingsPage } from "pages/settings_page.slint";
 import { WaitingForMediaView,
          CastingView }                  from "pages/casting_page.slint";
 import { CodecTestPage }                from "pages/codec_test_page.slint";
+import { CodecPerfPage }                from "pages/codec_perf_page.slint";
 import { FullDebugPage }                from "pages/debug_page.slint";
 import { BackupResetPage }              from "pages/backup_reset_page.slint";
 import { AudioPage }                    from "pages/audio_page.slint";
@@ -176,6 +177,7 @@ export component MainWindow inherits Window {
             if PanelBridge.active == Panel.settings:            FullSettingsPage        { }
             if PanelBridge.active == Panel.debug:               FullDebugPage           { }
             if PanelBridge.active == Panel.codec-test:          CodecTestPage           { }
+            if PanelBridge.active == Panel.codec-perf:          CodecPerfPage           { }
             if PanelBridge.active == Panel.backup-reset:        BackupResetPage         { }
             if PanelBridge.active == Panel.audio:               AudioPage               { }
             if PanelBridge.active == Panel.camera:              CameraPage              { }
