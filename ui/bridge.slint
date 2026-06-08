@@ -477,4 +477,14 @@ export global Bridge {
     callback save-codec-log();        // write the current report to a file
     // Result of the last save — absolute path on success, or an error string.
     in property <string> codec-test-save-status: "";
+
+    // ── Codec performance benchmark (GStreamer pipeline throughput) ───────
+    in property <string> perf-test-log: "";
+    // Same report split into lines for a virtualised ListView (smooth scroll).
+    in property <[string]> perf-test-log-lines: [];
+    in property <bool>   perf-test-running: false;
+    callback run-perf-test();
+    callback run-perf-encode-only();
+    callback run-perf-decode-only();
+    callback run-perf-list-factories();
 }
