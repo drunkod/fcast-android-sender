@@ -440,6 +440,9 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
 
         @JvmStatic
         external fun nativeGraphCommand(payloadJson: String): String
+
+        @JvmStatic
+        external fun nativeCodecBenchmarkResult(resultJson: String)
     }
 
 }

@@ -47,6 +47,11 @@
             android:stopWithTask="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".bench.CodecBenchmarkService"
+            android:process=":codec_bench"
+            android:exported="false"
+            android:stopWithTask="true" />
 
         <activity
             android:name="com.journeyapps.barcodescanner.CaptureActivity"

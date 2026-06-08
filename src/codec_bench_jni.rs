@@ -67,3 +67,28 @@ pub extern "C" fn Java_org_fcast_android_sender_bench_NativeCodecBench_nativeCan
 pub fn is_cancelled() -> bool {
     CANCELLED.load(Ordering::SeqCst)
 }
+
+#[cfg(target_os = "android")]
+pub fn request_codec_benchmark(
+    request: &crate::codec_bench_plan::CodecBenchRequest,
+) -> Result<(), String> {
+    use crate::jni_bridge::helpers::{load_app_class, vm};
+
+    let json = serde_json::to_string(request).map_err(|e| format!("serialize request: {e}"))?;
+
+    let vm = vm();
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| format!("attach: {e}"))?;
+    let class = load_app_class(
+        &mut env,
+        "org/fcast/android/sender/bench/CodecBenchmarkClient",
+    )
+    .map_err(|e| format!("load CodecBenchmarkClient: {e}"))?;
+    let arg = env
+        .new_string(&json)
+        .map_err(|e| format!("new_string: {e}"))?;
+    env.call_static_method(class, "start", "(Ljava/lang/String;)V", &[(&arg).into()])
+        .map_err(|e| format!("call start: {e}"))?;
+    Ok(())
+}

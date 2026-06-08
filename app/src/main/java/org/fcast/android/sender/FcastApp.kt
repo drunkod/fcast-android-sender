@@ -1,6 +1,7 @@
 package org.fcast.android.sender
 
 import android.app.Application
+import android.content.Context
 
 import org.fcast.android.sender.data.SecretStoreBridge
 
@@ -19,6 +20,12 @@ class FcastApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        appContext = applicationContext
         SecretStoreBridge.install(graph.secretStore)
+    }
+
+    companion object {
+        @JvmStatic lateinit var appContext: Context
+            private set
     }
 }

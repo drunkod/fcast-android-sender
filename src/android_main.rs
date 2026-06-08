@@ -17,7 +17,6 @@ use crate::platform::panel_stack::PanelStack;
 use crate::platform::platform_app::{spawn_recording_ticker, PlatformApp, RecordingTickerState};
 use crate::*;
 
-
 use gstpop_runtime::GstPopClient;
 use once_cell::sync::Lazy;
 use std::sync::atomic::AtomicBool;
@@ -503,13 +502,13 @@ fn android_main(app: PlatformApp) {
         move || {
             let Some(ui) = ui_weak.upgrade() else { return };
             let b = ui.global::<Bridge>();
-            
+
             // Save Stream Key securely
             let key = b.get_cam_rtmp_stream_key().to_string();
             if let Err(e) = crate::secret::store("cam_rtmp_stream_key", &key) {
                 tracing::error!("Failed to store cam_rtmp_stream_key: {}", e);
             }
-            
+
             // Save standard config (URL + Global Camera Settings)
             let url = b.get_cam_rtmp_url().to_string();
             let camera_idx = b.get_camera_idx();
@@ -518,12 +517,12 @@ fn android_main(app: PlatformApp) {
             let mirror_front = b.get_camera_mirror_front();
             let stabilization = b.get_camera_stabilization();
             let zoom_level = b.get_camera_zoom_level();
-            
+
             if let Err(e) = crate::config::update(|cfg| {
                 let mut rtmp = cfg.camera_rtmp.clone().unwrap_or_default();
                 rtmp.url = url;
                 cfg.camera_rtmp = Some(rtmp);
-                
+
                 let mut cam = cfg.global_camera.clone().unwrap_or_default();
                 cam.camera_idx = camera_idx;
                 cam.resolution_idx = resolution_idx;
@@ -535,7 +534,7 @@ fn android_main(app: PlatformApp) {
             }) {
                 tracing::error!("Failed to save global config: {}", e);
             }
-            
+
             tracing::info!("Camera and RTMP settings saved successfully");
         }
     });
@@ -1334,21 +1333,31 @@ fn android_main(app: PlatformApp) {
         ui.global::<Bridge>().set_perf_test_log(text.into());
     }
 
+    let _ = crate::PERF_UI_WEAK.set(ui.as_weak());
+
     ui.global::<Bridge>().on_run_perf_test({
         let ui_weak = ui.as_weak();
         move || {
             let _ = ui_weak.upgrade_in_event_loop(|ui| {
                 ui.global::<Bridge>().set_perf_test_running(true);
-                set_perf_log(&ui, "Running full codec benchmark…\nThis may take 1-2 minutes.");
+                set_perf_log(
+                    &ui,
+                    "Running full benchmark in :codec_bench process…\nThis may take 1–2 minutes.",
+                );
             });
-            let ui_inner = ui_weak.clone();
-            std::thread::spawn(move || {
-                let report = crate::codec_perf::run_full_benchmark();
-                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
-                    set_perf_log(&ui, &report);
+            let req = crate::codec_bench_plan::CodecBenchRequest {
+                include_factory_list: true,
+                include_encode_perf: true,
+                include_decode_perf: true,
+                kill_process_after_decode: true,
+                use_foreign_egl: true,
+            };
+            if let Err(e) = crate::codec_bench_jni::request_codec_benchmark(&req) {
+                let _ = ui_weak.upgrade_in_event_loop(move |ui| {
+                    set_perf_log(&ui, &format!("Failed to start benchmark service: {e}"));
                     ui.global::<Bridge>().set_perf_test_running(false);
                 });
-            });
+            }
         }
     });
 
@@ -1375,16 +1384,21 @@ fn android_main(app: PlatformApp) {
         move || {
             let _ = ui_weak.upgrade_in_event_loop(|ui| {
                 ui.global::<Bridge>().set_perf_test_running(true);
-                set_perf_log(&ui, "Running decode benchmark…");
+                set_perf_log(&ui, "Running decode benchmark in :codec_bench process…");
             });
-            let ui_inner = ui_weak.clone();
-            std::thread::spawn(move || {
-                let report = crate::codec_perf::run_decode_benchmarks();
-                let _ = ui_inner.upgrade_in_event_loop(move |ui| {
-                    set_perf_log(&ui, &report);
+            let req = crate::codec_bench_plan::CodecBenchRequest {
+                include_factory_list: false,
+                include_encode_perf: false,
+                include_decode_perf: true,
+                kill_process_after_decode: true,
+                use_foreign_egl: true,
+            };
+            if let Err(e) = crate::codec_bench_jni::request_codec_benchmark(&req) {
+                let _ = ui_weak.upgrade_in_event_loop(move |ui| {
+                    set_perf_log(&ui, &format!("Failed to start benchmark service: {e}"));
                     ui.global::<Bridge>().set_perf_test_running(false);
                 });
-            });
+            }
         }
     });
 
