@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use migration_runtime::protocol::{Scene, Widget};
 use serde::{Deserialize, Serialize};
 
 use super::BackendKind;
@@ -82,6 +83,12 @@ pub struct StoredBackendConfig {
     pub global_camera: Option<GlobalCameraConfig>,
     #[serde(default)]
     pub srt_destination: Option<SrtDestinationConfig>,
+    #[serde(default)]
+    pub scenes: Vec<Scene>,
+    #[serde(default)]
+    pub widgets: Vec<Widget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_scene_id: Option<String>,
 }
 
 impl StoredBackendConfig {
@@ -95,6 +102,15 @@ impl StoredBackendConfig {
             camera_rtmp: None,
             global_camera: None,
             srt_destination: None,
+            scenes: vec![Scene {
+                id: "scene-main".to_owned(),
+                name: "Main".to_owned(),
+                enabled: true,
+                widgets: vec![],
+                quick_switch_group: None,
+            }],
+            widgets: vec![],
+            current_scene_id: Some("scene-main".to_owned()),
         }
     }
 

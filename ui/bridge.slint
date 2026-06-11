@@ -299,6 +299,8 @@ export global Bridge {
     in property <[SceneItem]> scenes: [];
     in-out property <string> current-scene-id: "";
     in-out property <string> editing-scene-id: "";
+    in-out property <string> editing-scene-name: "";
+    in-out property <int> editing-scene-quick-group: 0;
     in property <[ScenePlacementItem]> editing-scene-widgets: [];
 
     callback set-scene(string);

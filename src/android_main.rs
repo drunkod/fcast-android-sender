@@ -1,8 +1,10 @@
 //! Android entry point. Called by slint_android via JNI bootstrap.
 //! Extracted from src/lib.rs as part of refactor step 07.7.
 
+use migration_runtime::protocol::{Scene, SceneWidgetPlacement, Widget, WidgetLayout, WidgetType};
 use parking_lot::Mutex;
 use slint::ComponentHandle;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -87,6 +89,145 @@ fn android_main(app: PlatformApp) {
         thermal_label: String,
         battery_pct: i32,
         charging: bool,
+    }
+
+    #[derive(Clone, Default)]
+    struct SceneRegistryState {
+        scenes: BTreeMap<String, Scene>,
+        widgets: BTreeMap<String, Widget>,
+        current_scene_id: Option<String>,
+    }
+
+    fn default_main_scene() -> Scene {
+        Scene {
+            id: "scene-main".to_owned(),
+            name: "Main".to_owned(),
+            enabled: true,
+            widgets: vec![],
+            quick_switch_group: None,
+        }
+    }
+
+    fn widget_type_str(widget_type: &WidgetType) -> &'static str {
+        match widget_type {
+            WidgetType::Text { .. } => "text",
+            WidgetType::Image { .. } => "image",
+            WidgetType::Crop { .. } => "crop",
+            WidgetType::Clock { .. } => "clock",
+        }
+    }
+
+    fn placement_items(reg: &SceneRegistryState, scene_id: &str) -> Vec<ScenePlacementItem> {
+        reg.scenes
+            .get(scene_id)
+            .map(|scene| {
+                scene
+                    .widgets
+                    .iter()
+                    .filter_map(|placement| {
+                        reg.widgets
+                            .get(&placement.widget_id)
+                            .map(|widget| ScenePlacementItem {
+                                widget_id: placement.widget_id.clone().into(),
+                                name: widget.name.clone().into(),
+                                widget_type: widget_type_str(&widget.widget_type).into(),
+                                enabled: placement.enabled,
+                                x: placement.layout.x as f32,
+                                y: placement.layout.y as f32,
+                                width: placement.layout.width as f32,
+                                height: placement.layout.height as f32,
+                                opacity: placement.layout.opacity as f32,
+                                zorder: placement.zorder,
+                            })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn update_editing_scene_bridge(ui: &MainWindow, reg: &SceneRegistryState, scene_id: &str) {
+        let bridge = ui.global::<Bridge>();
+        bridge.set_editing_scene_id(scene_id.into());
+
+        if let Some(scene) = reg.scenes.get(scene_id) {
+            bridge.set_editing_scene_name(scene.name.clone().into());
+            bridge.set_editing_scene_quick_group(scene.quick_switch_group.unwrap_or(0) as i32);
+            bridge.set_editing_scene_widgets(
+                std::rc::Rc::new(slint::VecModel::from(placement_items(reg, scene_id))).into(),
+            );
+        } else {
+            bridge.set_editing_scene_name("".into());
+            bridge.set_editing_scene_quick_group(0);
+            bridge
+                .set_editing_scene_widgets(std::rc::Rc::new(slint::VecModel::from(vec![])).into());
+        }
+    }
+
+    fn push_scene_models(ui_handle: slint::Weak<MainWindow>, reg: &SceneRegistryState) {
+        let reg = reg.clone();
+        let scenes = reg
+            .scenes
+            .values()
+            .map(|scene| SceneItem {
+                id: scene.id.clone().into(),
+                name: scene.name.clone().into(),
+                enabled: scene.enabled,
+                active: reg.current_scene_id.as_deref() == Some(scene.id.as_str()),
+                widget_count: scene.widgets.len() as i32,
+                quick_switch_group: scene.quick_switch_group.unwrap_or(0) as i32,
+            })
+            .collect::<Vec<_>>();
+        let widgets = reg
+            .widgets
+            .values()
+            .map(|widget| WidgetItem {
+                id: widget.id.clone().into(),
+                name: widget.name.clone().into(),
+                widget_type: widget_type_str(&widget.widget_type).into(),
+                enabled: widget.enabled,
+            })
+            .collect::<Vec<_>>();
+        let current_scene_id = reg.current_scene_id.clone().unwrap_or_default();
+
+        let _ = ui_handle.upgrade_in_event_loop(move |ui| {
+            let bridge = ui.global::<Bridge>();
+            bridge.set_scenes(std::rc::Rc::new(slint::VecModel::from(scenes)).into());
+            bridge.set_widgets(std::rc::Rc::new(slint::VecModel::from(widgets)).into());
+            bridge.set_current_scene_id(current_scene_id.into());
+
+            let current_editing = bridge.get_editing_scene_id().to_string();
+            let next_editing = if reg.scenes.contains_key(&current_editing) {
+                current_editing
+            } else if let Some(current_id) = reg.current_scene_id.clone() {
+                current_id
+            } else {
+                reg.scenes.keys().next().cloned().unwrap_or_default()
+            };
+            update_editing_scene_bridge(&ui, &reg, &next_editing);
+        });
+    }
+
+    fn persist_scene_registry(reg: &SceneRegistryState) {
+        let scenes = reg.scenes.values().cloned().collect::<Vec<_>>();
+        let widgets = reg.widgets.values().cloned().collect::<Vec<_>>();
+        let current_scene_id = reg.current_scene_id.clone();
+        if let Err(err) = crate::config::update(move |cfg| {
+            cfg.scenes = scenes;
+            cfg.widgets = widgets;
+            cfg.current_scene_id = current_scene_id;
+        }) {
+            tracing::error!(%err, "Failed to persist scene registry");
+        }
+    }
+
+    fn dispatch_scene_command(command: migration_runtime::protocol::Command) {
+        match migration_runtime::runtime::handle_command(command) {
+            migration_runtime::protocol::CommandResult::Success
+            | migration_runtime::protocol::CommandResult::Info(_) => {}
+            migration_runtime::protocol::CommandResult::Error(err) => {
+                tracing::warn!(%err, "Scene/widget runtime command failed");
+            }
+        }
     }
 
     fn push_status(ui_handle: slint::Weak<MainWindow>, snap: StatusSnapshot) {
@@ -480,6 +621,55 @@ fn android_main(app: PlatformApp) {
 
     // Hydrate the Bridge from saved configuration on startup
     let backend_cfg = crate::config::load();
+
+    let mut initial_scene_registry = SceneRegistryState::default();
+    for scene in backend_cfg.scenes.clone() {
+        initial_scene_registry
+            .scenes
+            .insert(scene.id.clone(), scene);
+    }
+    for widget in backend_cfg.widgets.clone() {
+        initial_scene_registry
+            .widgets
+            .insert(widget.id.clone(), widget);
+    }
+    let mut repaired_scene_registry = false;
+    if initial_scene_registry.scenes.is_empty() {
+        let scene = default_main_scene();
+        initial_scene_registry
+            .scenes
+            .insert(scene.id.clone(), scene.clone());
+        initial_scene_registry.current_scene_id = Some(scene.id);
+        repaired_scene_registry = true;
+    } else {
+        initial_scene_registry.current_scene_id = backend_cfg
+            .current_scene_id
+            .clone()
+            .filter(|scene_id| initial_scene_registry.scenes.contains_key(scene_id))
+            .or_else(|| initial_scene_registry.scenes.keys().next().cloned());
+        repaired_scene_registry =
+            initial_scene_registry.current_scene_id != backend_cfg.current_scene_id;
+    }
+    let scene_registry = Arc::new(Mutex::new(initial_scene_registry));
+    {
+        let scene_snapshot = scene_registry.lock().clone();
+        if repaired_scene_registry {
+            persist_scene_registry(&scene_snapshot);
+        }
+        for widget in scene_snapshot.widgets.values().cloned() {
+            dispatch_scene_command(migration_runtime::protocol::Command::CreateWidget { widget });
+        }
+        for scene in scene_snapshot.scenes.values().cloned() {
+            dispatch_scene_command(migration_runtime::protocol::Command::CreateScene { scene });
+        }
+        if let Some(current_scene_id) = scene_snapshot.current_scene_id.clone() {
+            dispatch_scene_command(migration_runtime::protocol::Command::SetScene {
+                scene_id: current_scene_id,
+            });
+        }
+        push_scene_models(ui.as_weak(), &scene_snapshot);
+    }
+
     let rtmp_cfg = backend_cfg.camera_rtmp.unwrap_or_default();
     let global_cam_cfg = backend_cfg.global_camera.unwrap_or_default();
     let b = ui.global::<Bridge>();
@@ -511,6 +701,442 @@ fn android_main(app: PlatformApp) {
         .ok()
         .flatten();
     b.set_srt_destination_passphrase(srt_pass.as_deref().unwrap_or("").into());
+
+    ui.global::<Bridge>().on_create_scene({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |name| {
+            let name = name.trim().to_string();
+            if name.is_empty() {
+                return;
+            }
+
+            let scene = Scene {
+                id: uuid::Uuid::new_v4().to_string(),
+                name,
+                enabled: true,
+                widgets: vec![],
+                quick_switch_group: None,
+            };
+
+            let snapshot = {
+                let mut reg = scene_registry.lock();
+                if reg.current_scene_id.is_none() {
+                    reg.current_scene_id = Some(scene.id.clone());
+                }
+                reg.scenes.insert(scene.id.clone(), scene.clone());
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                snapshot
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::CreateScene { scene });
+            push_scene_models(ui_weak.clone(), &snapshot);
+        }
+    });
+
+    ui.global::<Bridge>().on_set_scene({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id| {
+            let scene_id = scene_id.to_string();
+            let snapshot = {
+                let mut reg = scene_registry.lock();
+                if !reg.scenes.contains_key(&scene_id) {
+                    return;
+                }
+                reg.current_scene_id = Some(scene_id.clone());
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                snapshot
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::SetScene {
+                scene_id: scene_id.clone(),
+            });
+            push_scene_models(ui_weak.clone(), &snapshot);
+        }
+    });
+
+    ui.global::<Bridge>().on_rename_scene({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id, name| {
+            let scene_id = scene_id.to_string();
+            let updated_scene = {
+                let mut reg = scene_registry.lock();
+                let Some(scene) = reg.scenes.get_mut(&scene_id) else {
+                    return;
+                };
+                scene.name = name.to_string();
+                let updated_scene = scene.clone();
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                push_scene_models(ui_weak.clone(), &snapshot);
+                updated_scene
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::UpdateScene {
+                scene: updated_scene,
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_remove_scene({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id| {
+            let scene_id = scene_id.to_string();
+            let (snapshot, next_scene_id) = {
+                let mut reg = scene_registry.lock();
+                if reg.scenes.remove(&scene_id).is_none() {
+                    return;
+                }
+                if reg.current_scene_id.as_deref() == Some(scene_id.as_str()) {
+                    reg.current_scene_id = reg.scenes.keys().next().cloned();
+                } else if reg
+                    .current_scene_id
+                    .as_ref()
+                    .is_some_and(|current| !reg.scenes.contains_key(current))
+                {
+                    reg.current_scene_id = reg.scenes.keys().next().cloned();
+                }
+                let next_scene_id = reg.current_scene_id.clone();
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                (snapshot, next_scene_id)
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::RemoveScene {
+                scene_id: scene_id.clone(),
+            });
+            if let Some(next_scene_id) = next_scene_id.clone() {
+                dispatch_scene_command(migration_runtime::protocol::Command::SetScene {
+                    scene_id: next_scene_id,
+                });
+            }
+            push_scene_models(ui_weak.clone(), &snapshot);
+        }
+    });
+
+    ui.global::<Bridge>().on_set_scene_quick_group({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id, group| {
+            let scene_id = scene_id.to_string();
+            let updated_scene = {
+                let mut reg = scene_registry.lock();
+                let Some(scene) = reg.scenes.get_mut(&scene_id) else {
+                    return;
+                };
+                scene.quick_switch_group = if group <= 0 {
+                    None
+                } else {
+                    Some(group.clamp(1, i32::from(u8::MAX)) as u8)
+                };
+                let updated_scene = scene.clone();
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                push_scene_models(ui_weak.clone(), &snapshot);
+                updated_scene
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::UpdateScene {
+                scene: updated_scene,
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_open_scene_edit({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id| {
+            let scene_id = scene_id.to_string();
+            let snapshot = scene_registry.lock().clone();
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            update_editing_scene_bridge(&ui, &snapshot, &scene_id);
+            ui.global::<crate::PanelBridge>()
+                .invoke_push(crate::Panel::SceneEdit);
+        }
+    });
+
+    ui.global::<Bridge>().on_create_widget({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move || {
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            let bridge = ui.global::<Bridge>();
+            let scene_id = bridge.get_editing_scene_id().to_string();
+            if scene_id.is_empty() {
+                return;
+            }
+
+            let widget_type = match bridge.get_draft_widget_type() {
+                WidgetTypeChoice::Text => WidgetType::Text {
+                    format: bridge.get_draft_widget_text_format().to_string(),
+                    font_size: Some(bridge.get_draft_widget_font_size().max(1) as u32),
+                    color: None,
+                },
+                WidgetTypeChoice::Image => {
+                    let asset_id = bridge.get_draft_widget_image_path().to_string();
+                    if asset_id.is_empty() {
+                        Application::flash_banner(
+                            ui_weak.clone(),
+                            "Pick an image first".into(),
+                            BannerSeverity::Warning,
+                            std::time::Duration::from_secs(2),
+                        );
+                        return;
+                    }
+                    WidgetType::Image {
+                        asset_id,
+                        scale_mode: Some(match bridge.get_draft_widget_scale_idx() {
+                            1 => "fill".to_string(),
+                            2 => "stretch".to_string(),
+                            _ => "fit".to_string(),
+                        }),
+                    }
+                }
+                WidgetTypeChoice::Crop => WidgetType::Crop {
+                    top: bridge.get_draft_crop_top() as f64,
+                    bottom: bridge.get_draft_crop_bottom() as f64,
+                    left: bridge.get_draft_crop_left() as f64,
+                    right: bridge.get_draft_crop_right() as f64,
+                },
+                WidgetTypeChoice::Clock => WidgetType::Clock {
+                    format: bridge.get_draft_widget_clock_format().to_string(),
+                    font_size: Some(bridge.get_draft_widget_font_size().max(1) as u32),
+                    color: None,
+                },
+            };
+
+            let widget = Widget {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: bridge.get_draft_widget_name().to_string(),
+                widget_type,
+                enabled: true,
+            };
+
+            let updated_scene = {
+                let mut reg = scene_registry.lock();
+                reg.widgets.insert(widget.id.clone(), widget.clone());
+                let Some(scene) = reg.scenes.get_mut(&scene_id) else {
+                    return;
+                };
+                let zorder = scene.widgets.iter().map(|p| p.zorder).max().unwrap_or(0) + 1;
+                scene.widgets.push(SceneWidgetPlacement {
+                    widget_id: widget.id.clone(),
+                    layout: WidgetLayout::default(),
+                    enabled: true,
+                    zorder,
+                });
+                let updated_scene = scene.clone();
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                push_scene_models(ui_weak.clone(), &snapshot);
+                updated_scene
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::CreateWidget { widget });
+            dispatch_scene_command(migration_runtime::protocol::Command::UpdateScene {
+                scene: updated_scene,
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_remove_widget({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |widget_id| {
+            let widget_id = widget_id.to_string();
+            let changed_scenes = {
+                let mut reg = scene_registry.lock();
+                reg.widgets.remove(&widget_id);
+                let mut changed = Vec::new();
+                for scene in reg.scenes.values_mut() {
+                    let before = scene.widgets.len();
+                    scene
+                        .widgets
+                        .retain(|placement| placement.widget_id != widget_id);
+                    if scene.widgets.len() != before {
+                        changed.push(scene.clone());
+                    }
+                }
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                push_scene_models(ui_weak.clone(), &snapshot);
+                changed
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::RemoveWidget {
+                widget_id,
+            });
+            for scene in changed_scenes {
+                dispatch_scene_command(migration_runtime::protocol::Command::UpdateScene { scene });
+            }
+        }
+    });
+
+    ui.global::<Bridge>().on_add_widget_to_scene({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id, widget_id| {
+            let scene_id = scene_id.to_string();
+            let widget_id = widget_id.to_string();
+            let updated_scene = {
+                let mut reg = scene_registry.lock();
+                if !reg.widgets.contains_key(&widget_id) {
+                    return;
+                }
+                let Some(scene) = reg.scenes.get_mut(&scene_id) else {
+                    return;
+                };
+                if scene
+                    .widgets
+                    .iter()
+                    .any(|placement| placement.widget_id == widget_id)
+                {
+                    return;
+                }
+                let zorder = scene.widgets.iter().map(|p| p.zorder).max().unwrap_or(0) + 1;
+                scene.widgets.push(SceneWidgetPlacement {
+                    widget_id,
+                    layout: WidgetLayout::default(),
+                    enabled: true,
+                    zorder,
+                });
+                let updated_scene = scene.clone();
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                push_scene_models(ui_weak.clone(), &snapshot);
+                updated_scene
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::UpdateScene {
+                scene: updated_scene,
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_remove_widget_from_scene({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id, widget_id| {
+            let scene_id = scene_id.to_string();
+            let widget_id = widget_id.to_string();
+            let updated_scene = {
+                let mut reg = scene_registry.lock();
+                let Some(scene) = reg.scenes.get_mut(&scene_id) else {
+                    return;
+                };
+                let before = scene.widgets.len();
+                scene
+                    .widgets
+                    .retain(|placement| placement.widget_id != widget_id);
+                if scene.widgets.len() == before {
+                    return;
+                }
+                let updated_scene = scene.clone();
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                push_scene_models(ui_weak.clone(), &snapshot);
+                updated_scene
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::UpdateScene {
+                scene: updated_scene,
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_set_placement_enabled({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id, widget_id, enabled| {
+            let scene_id = scene_id.to_string();
+            let widget_id = widget_id.to_string();
+            let updated_scene = {
+                let mut reg = scene_registry.lock();
+                let Some(scene) = reg.scenes.get_mut(&scene_id) else {
+                    return;
+                };
+                let Some(placement) = scene
+                    .widgets
+                    .iter_mut()
+                    .find(|placement| placement.widget_id == widget_id)
+                else {
+                    return;
+                };
+                placement.enabled = enabled;
+                let updated_scene = scene.clone();
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                push_scene_models(ui_weak.clone(), &snapshot);
+                updated_scene
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::UpdateScene {
+                scene: updated_scene,
+            });
+        }
+    });
+
+    ui.global::<Bridge>().on_pick_widget_image({
+        let ui_weak = ui.as_weak();
+        move || {
+            Application::flash_banner(
+                ui_weak.clone(),
+                "Image picker not wired yet".into(),
+                BannerSeverity::Info,
+                std::time::Duration::from_secs(2),
+            );
+        }
+    });
+
+    ui.global::<Bridge>().on_apply_widget_layout({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |scene_id, widget_id, x, y, width, height, opacity| {
+            let scene_id = scene_id.to_string();
+            let widget_id = widget_id.to_string();
+            let layout = WidgetLayout {
+                x: x as f64,
+                y: y as f64,
+                width: width as f64,
+                height: height as f64,
+                rotation: 0.0,
+                opacity: opacity as f64,
+            };
+            let snapshot = {
+                let mut reg = scene_registry.lock();
+                let Some(scene) = reg.scenes.get_mut(&scene_id) else {
+                    return;
+                };
+                let Some(placement) = scene
+                    .widgets
+                    .iter_mut()
+                    .find(|placement| placement.widget_id == widget_id)
+                else {
+                    return;
+                };
+                placement.layout = layout.clone();
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                snapshot
+            };
+
+            dispatch_scene_command(migration_runtime::protocol::Command::UpdateWidgetLayout {
+                scene_id,
+                widget_id,
+                layout,
+            });
+            push_scene_models(ui_weak.clone(), &snapshot);
+        }
+    });
 
     ui.global::<Bridge>().on_save_cam_rtmp_config({
         let ui_weak = ui.as_weak();
@@ -2096,27 +2722,38 @@ fn android_main(app: PlatformApp) {
         move || {
             let ui = ui_weak.clone();
 
-            let (backend, uri, latency, pass, pbkeylen_idx, cam_idx, res_idx, fps_idx, mirror, stab, zoom) =
-                match ui.upgrade() {
-                    Some(u) => {
-                        let b = u.global::<Bridge>();
-                        let d = b.get_srt_destination();
-                        (
-                            b.get_media_backend(),
-                            d.uri.to_string(),
-                            d.latency_ms,
-                            b.get_srt_destination_passphrase().to_string(),
-                            b.get_srt_destination_pbkeylen_idx(),
-                            b.get_camera_idx(),
-                            b.get_resolution_idx(),
-                            b.get_framerate_idx(),
-                            b.get_camera_mirror_front(),
-                            b.get_camera_stabilization(),
-                            b.get_camera_zoom_level(),
-                        )
-                    }
-                    None => return,
-                };
+            let (
+                backend,
+                uri,
+                latency,
+                pass,
+                pbkeylen_idx,
+                cam_idx,
+                res_idx,
+                fps_idx,
+                mirror,
+                stab,
+                zoom,
+            ) = match ui.upgrade() {
+                Some(u) => {
+                    let b = u.global::<Bridge>();
+                    let d = b.get_srt_destination();
+                    (
+                        b.get_media_backend(),
+                        d.uri.to_string(),
+                        d.latency_ms,
+                        b.get_srt_destination_passphrase().to_string(),
+                        b.get_srt_destination_pbkeylen_idx(),
+                        b.get_camera_idx(),
+                        b.get_resolution_idx(),
+                        b.get_framerate_idx(),
+                        b.get_camera_mirror_front(),
+                        b.get_camera_stabilization(),
+                        b.get_camera_zoom_level(),
+                    )
+                }
+                None => return,
+            };
 
             // SRT destination only runs on the Migration backend (gst-pop's
             // camera path is RTMP-specific).

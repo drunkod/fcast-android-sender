@@ -62,8 +62,6 @@ export component SceneEditPage inherits Rectangle {
     width: 100%;
     height: 100%;
     background: transparent;
-    in-out property <string> scene-name: "";
-    in-out property <int> quick-group: 0;
 
     forward-focus: scope;
     scope := FocusScope {
@@ -105,7 +103,7 @@ export component SceneEditPage inherits Rectangle {
                         VerticalLayout {
                             padding: Theme.padding-screen;
                             Input {
-                                text <=> root.scene-name;
+                                text <=> Bridge.editing-scene-name;
                                 placeholder: @tr("Scene name");
                                 edited(v) => {
                                     Bridge.rename-scene(Bridge.editing-scene-id, v);
@@ -126,7 +124,7 @@ export component SceneEditPage inherits Rectangle {
                         card-padding: CardPadding.none;
                         clip: true;
                         GroupCycler {
-                            group <=> root.quick-group;
+                            group <=> Bridge.editing-scene-quick-group;
                             changed(g) => {
                                 Bridge.set-scene-quick-group(Bridge.editing-scene-id, g);
                             }
