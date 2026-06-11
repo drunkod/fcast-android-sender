@@ -4168,12 +4168,14 @@ dependencies = [
 name = "migration-runtime"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "chrono",
  "gst-plugin-webrtc",
  "gstreamer 0.25.2",
  "gstreamer-app",
  "gstreamer-video",
+ "image",
  "lazy_static",
  "mcore",
  "parking_lot",

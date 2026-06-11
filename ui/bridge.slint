@@ -139,6 +139,11 @@ export enum Panel {
     rtmp-wizard,
     protocol-rtmp-settings,
     protocol-srt-settings,
+    scene-list,
+    scene-edit,
+    widget-wizard,
+    widget-settings,
+    scene-widget-layout,
 }
 
 export struct QuickAction {
@@ -238,6 +243,37 @@ export struct MixerCanvas {
     last-error: string,
 }
 
+export struct SceneItem {
+    id: string,
+    name: string,
+    enabled: bool,
+    active: bool,
+    widget-count: int,
+    quick-switch-group: int,
+}
+
+export struct WidgetItem {
+    id: string,
+    name: string,
+    widget-type: string,
+    enabled: bool,
+}
+
+export struct ScenePlacementItem {
+    widget-id: string,
+    name: string,
+    widget-type: string,
+    enabled: bool,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    opacity: float,
+    zorder: int,
+}
+
+export enum WidgetTypeChoice { text, image, crop, clock }
+
 export global Bridge {
     // ── Data properties (Rust → Slint) ──────────────────────────────────
     in property <[ReceiverItem]> devices: [
@@ -258,6 +294,50 @@ export global Bridge {
     callback clear-log-entries();
     out property <AppState> app-state: AppState.Disconnected;
     in-out property <Panel> active-panel: Panel.none;
+
+    // ── Scenes (v0.2.0) ──────────────────────────────────────────────────
+    in property <[SceneItem]> scenes: [];
+    in-out property <string> current-scene-id: "";
+    in-out property <string> editing-scene-id: "";
+    in property <[ScenePlacementItem]> editing-scene-widgets: [];
+
+    callback set-scene(string);
+    callback create-scene(string);
+    callback rename-scene(string, string);
+    callback remove-scene(string);
+    callback reorder-scenes(int, int);
+    callback set-scene-quick-group(string, int);
+    callback open-scene-edit(string);
+
+    // ── Widgets (v0.2.0) ─────────────────────────────────────────────────
+    in property <[WidgetItem]> widgets: [];
+    in-out property <WidgetTypeChoice> draft-widget-type: WidgetTypeChoice.text;
+    in-out property <string> draft-widget-name: "";
+    in-out property <string> draft-widget-text-format: "";
+    in-out property <int> draft-widget-font-size: 32;
+    in-out property <string> draft-widget-image-path: "";
+    in-out property <int> draft-widget-scale-idx: 0;
+    in-out property <string> draft-widget-clock-format: "%H:%M:%S";
+    in-out property <float> draft-crop-top: 0;
+    in-out property <float> draft-crop-bottom: 0;
+    in-out property <float> draft-crop-left: 0;
+    in-out property <float> draft-crop-right: 0;
+
+    callback create-widget();
+    callback remove-widget(string);
+    callback add-widget-to-scene(string, string);
+    callback remove-widget-from-scene(string, string);
+    callback set-placement-enabled(string, string, bool);
+    callback pick-widget-image();
+
+    // ── Widget layout editor ─────────────────────────────────────────────
+    in-out property <string> editing-widget-id: "";
+    in-out property <float> layout-x: 0;
+    in-out property <float> layout-y: 0;
+    in-out property <float> layout-width: 30;
+    in-out property <float> layout-height: 20;
+    in-out property <float> layout-opacity: 1.0;
+    callback apply-widget-layout(string, string, float, float, float, float, float);
     // ── Banner (Phase 8 / Cluster F1) ───────────────────────────────────
     // Rust pushes a banner with severity; auto-hide is handled by
     // Rust's `flash_banner` helper (consumer is `components/info_banner.slint`).
