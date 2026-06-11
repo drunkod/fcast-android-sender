@@ -129,6 +129,7 @@ import { WidgetWizardPage } from "pages/widget_wizard_page.slint";
 import { SceneWidgetLayoutPage } from "pages/scene_widget_layout_page.slint";
 import { Theme } from "theme.slint";
 import { CastControlBar } from "components/control_bar.slint";
+import { SceneButtonBar } from "components/scene_button_bar.slint";
 import { InfoBanner } from "components/info_banner.slint";
 import { PanelHost } from "components/panel_host.slint";
 import { LockOverlay } from "components/lock_overlay.slint";
@@ -273,6 +274,11 @@ export component MainWindow inherits Window {
             y: SafeArea.top + 8px;
             width: parent.width;
             right-inset: CameraHudMetrics.bar-width + 4px;
+        }
+        if PanelBridge.active == Panel.none && Bridge.app-state != AppState.Disconnected && Bridge.scenes.length > 1: SceneButtonBar {
+            x: 0;
+            y: parent.height - self.height - SafeArea.bottom - 8px;
+            width: parent.width;
         }
 
         // ── Global banner overlay ─────────────────────────────────────────────────

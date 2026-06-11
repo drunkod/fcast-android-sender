@@ -7,11 +7,25 @@
 import { Spinner } from "std-widgets.slint";
 import { Input } from "../slintcn/components/input.slint";
 import { ScrollArea } from "../slintcn/components/scroll-area.slint";
-import { Utils, VideoResolutionPicker, FrameratePicker } from "../components/mcore/common.slint";
-import { Bridge, Panel, LifecycleMode, MediaBackendKind, AppState } from "../bridge.slint";
+import {
+    Utils,
+    VideoResolutionPicker,
+    FrameratePicker,
+} from "../components/mcore/common.slint";
+import {
+    Bridge,
+    Panel,
+    LifecycleMode,
+    MediaBackendKind,
+    AppState,
+} from "../bridge.slint";
 import { PanelBridge } from "../state/panel_bridge.slint";
 import { Theme } from "../theme.slint";
-import { PrimaryButton, DestructiveButton, TextButton } from "../components/buttons.slint";
+import {
+    PrimaryButton,
+    DestructiveButton,
+    TextButton,
+} from "../components/buttons.slint";
 import {
     SettingsSection,
     SettingsValueRow,
@@ -58,14 +72,16 @@ export component SettingsPageView inherits Rectangle {
 
         DestructiveButton {
             label: @tr("Disconnect");
-            clicked => { Bridge.stop-casting(); }
+            clicked => {
+                Bridge.stop-casting();
+            }
         }
     }
 }
 
 export component FullSettingsPage inherits Rectangle {
-    in-out property <int>  resolution-idx: 2;
-    in-out property <int>  framerate-idx:  2;
+    in-out property <int> resolution-idx: 2;
+    in-out property <int> framerate-idx:  2;
     in-out property <bool> mdns-enabled:   true;
 
     width: 100%;
@@ -76,7 +92,9 @@ export component FullSettingsPage inherits Rectangle {
         // ── Header ────────────────────────────────────────────────────────────
         PanelHeader {
             title: @tr("Settings");
-            close-clicked => { PanelBridge.pop(); }
+            close-clicked => {
+                PanelBridge.pop();
+            }
         }
 
         // ── Body (scrollable) ─────────────────────────────────────────────────
@@ -95,77 +113,119 @@ export component FullSettingsPage inherits Rectangle {
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Stream Wizard");
                         value: @tr("Quick start via QR");
-                        clicked => { PanelBridge.push(Panel.rtmp-wizard); }
+                        clicked => {
+                            PanelBridge.push(Panel.rtmp-wizard);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "📷";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Camera");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.camera); }
+                        clicked => {
+                            PanelBridge.push(Panel.camera);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "🎧";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Audio");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.audio); }
+                        clicked => {
+                            PanelBridge.push(Panel.audio);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "📊";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Bitrate");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.bitrate-presets); }
+                        clicked => {
+                            PanelBridge.push(Panel.bitrate-presets);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "🎛️";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Mixer");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.mixer); }
+                        clicked => {
+                            PanelBridge.push(Panel.mixer);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "🌐";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Network");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.network); }
+                        clicked => {
+                            PanelBridge.push(Panel.network);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "📡";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Camera RTMP Stream");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.camera-rtmp-stream); }
+                        clicked => {
+                            PanelBridge.push(Panel.camera-rtmp-stream);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "🅡";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("RTMP Settings");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.protocol-rtmp-settings); }
+                        clicked => {
+                            PanelBridge.push(Panel.protocol-rtmp-settings);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "🛰";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("SRT Stream");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.protocol-srt-settings); }
+                        clicked => {
+                            PanelBridge.push(Panel.protocol-srt-settings);
+                        }
                     }
+
+                    SettingsValueRow {
+                        icon: "🎬";
+                        icon-bg: Theme.icon-bg-neutral;
+                        title: @tr("Scenes");
+                        value: @tr("open-panel-action" => "Open");
+                        clicked => {
+                            PanelBridge.push(Panel.scene-list);
+                        }
+                    }
+
                     SettingsValueRow {
                         icon: "📺";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Max resolution");
                         value: ["480p", "720p", "1080p", "1440p"][Math.clamp(root.resolution-idx, 0, 3)];
-                        clicked => { root.resolution-idx = Math.mod(root.resolution-idx + 1, 4); }
+                        clicked => {
+                            root.resolution-idx = Math.mod(root.resolution-idx + 1, 4);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "⏱";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Max framerate");
                         value: ["24 fps", "30 fps", "60 fps"][Math.clamp(root.framerate-idx, 0, 2)];
-                        clicked => { root.framerate-idx = Math.mod(root.framerate-idx + 1, 3); }
+                        clicked => {
+                            root.framerate-idx = Math.mod(root.framerate-idx + 1, 3);
+                        }
                     }
                 }
 
@@ -176,9 +236,9 @@ export component FullSettingsPage inherits Rectangle {
                     // Device list shown only when disconnected.
                     if Bridge.app-state == AppState.Disconnected: VerticalLayout {
                         spacing: Theme.spacing-default;
-                        padding-left:  Theme.padding-screen;
+                        padding-left: Theme.padding-screen;
                         padding-right: Theme.padding-screen;
-                        padding-top:   Theme.spacing-default;
+                        padding-top: Theme.spacing-default;
                         padding-bottom: Theme.spacing-default;
 
                         if Bridge.devices.length == 0: Rectangle {
@@ -188,7 +248,12 @@ export component FullSettingsPage inherits Rectangle {
                             HorizontalLayout {
                                 alignment: center;
                                 spacing: Theme.spacing-default;
-                                Spinner { indeterminate: true; width: 20px; height: 20px; }
+                                Spinner {
+                                    indeterminate: true;
+                                    width: 20px;
+                                    height: 20px;
+                                }
+
                                 Text {
                                     text: @tr("Searching for receivers…");
                                     color: Theme.text-secondary;
@@ -204,15 +269,20 @@ export component FullSettingsPage inherits Rectangle {
                                 height: Theme.row-height;
                                 background: dev-ta.pressed ? RowColors.pressed : RowColors.normal;
                                 dev-ta := TouchArea {
-                                    clicked => { Bridge.connect-receiver(device.id); PanelBridge.pop(); }
+                                    clicked => {
+                                        Bridge.connect-receiver(device.id);
+                                        PanelBridge.pop();
+                                    }
                                 }
+
                                 HorizontalLayout {
-                                    padding-left:  Theme.padding-screen;
+                                    padding-left: Theme.padding-screen;
                                     padding-right: Theme.padding-screen;
                                     alignment: center;
                                     spacing: Theme.spacing-default;
                                     Rectangle {
-                                        width: 28px; height: 28px;
+                                        width: 28px;
+                                        height: 28px;
                                         border-radius: Theme.radius-pill;
                                         background: Theme.icon-bg-neutral;
                                         Text {
@@ -223,6 +293,7 @@ export component FullSettingsPage inherits Rectangle {
                                             vertical-alignment: center;
                                         }
                                     }
+
                                     VerticalLayout {
                                         horizontal-stretch: 1;
                                         alignment: center;
@@ -232,6 +303,7 @@ export component FullSettingsPage inherits Rectangle {
                                             font-size: Theme.font-size-body;
                                             overflow: elide;
                                         }
+
                                         Text {
                                             text: device.address;
                                             color: Theme.text-secondary;
@@ -239,6 +311,7 @@ export component FullSettingsPage inherits Rectangle {
                                             overflow: elide;
                                         }
                                     }
+
                                     Text {
                                         text: "›";
                                         color: Theme.text-secondary;
@@ -252,6 +325,7 @@ export component FullSettingsPage inherits Rectangle {
                         ip-field := Input {
                             placeholder: @tr("Receiver IP address");
                         }
+
                         PrimaryButton {
                             label: @tr("Connect");
                             enabled: ip-field.text != "";
@@ -266,14 +340,19 @@ export component FullSettingsPage inherits Rectangle {
                         icon: "📲";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Pair via QR");
-                        clicked => { PanelBridge.push(Panel.pairing); }
+                        clicked => {
+                            PanelBridge.push(Panel.pairing);
+                        }
                     }
+
                     SettingsToggleRow {
                         icon: "🌐";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("mDNS discovery");
                         checked: root.mdns-enabled;
-                        toggled(checked) => { root.mdns-enabled = checked; }
+                        toggled(checked) => {
+                            root.mdns-enabled = checked;
+                        }
                     }
                 }
 
@@ -285,14 +364,19 @@ export component FullSettingsPage inherits Rectangle {
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Recording");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.recording); }
+                        clicked => {
+                            PanelBridge.push(Panel.recording);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "📜";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Cast history");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.cast-history); }
+                        clicked => {
+                            PanelBridge.push(Panel.cast-history);
+                        }
                     }
                 }
 
@@ -304,7 +388,9 @@ export component FullSettingsPage inherits Rectangle {
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Quick actions");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.quick-actions); }
+                        clicked => {
+                            PanelBridge.push(Panel.quick-actions);
+                        }
                     }
                 }
 
@@ -316,21 +402,29 @@ export component FullSettingsPage inherits Rectangle {
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Lock UI");
                         value: @tr("Enter");
-                        clicked => { Bridge.engage-lock(); }
+                        clicked => {
+                            Bridge.engage-lock();
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "🕵️";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Stealth mode");
                         value: @tr("Enter");
-                        clicked => { Bridge.engage-stealth(); }
+                        clicked => {
+                            Bridge.engage-stealth();
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "⏱";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Cast with countdown");
                         value: @tr("{}s", Bridge.snapshot-secs);
-                        clicked => { Bridge.start-snapshot-countdown(Bridge.snapshot-secs); }
+                        clicked => {
+                            Bridge.start-snapshot-countdown(Bridge.snapshot-secs);
+                        }
                     }
                 }
 
@@ -342,7 +436,9 @@ export component FullSettingsPage inherits Rectangle {
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Macros");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.macros); }
+                        clicked => {
+                            PanelBridge.push(Panel.macros);
+                        }
                     }
                 }
 
@@ -354,43 +450,58 @@ export component FullSettingsPage inherits Rectangle {
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("H.264 encoder test");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.codec-test); }
+                        clicked => {
+                            PanelBridge.push(Panel.codec-test);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "⚡";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Codec performance test");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.codec-perf); }
+                        clicked => {
+                            PanelBridge.push(Panel.codec-perf);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "📋";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Debug log");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.debug-log); }
+                        clicked => {
+                            PanelBridge.push(Panel.debug-log);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "📽️";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Video pipeline");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.debug-video); }
+                        clicked => {
+                            PanelBridge.push(Panel.debug-video);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "⚡";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Media backend");
-                        value: Bridge.media-backend == MediaBackendKind.migration
-                            ? @tr("Migration (in-process)")
-                            : @tr("gst-pop ({})", Bridge.gstpop-url);
-                        clicked => { PanelBridge.push(Panel.media-backend); }
+                        value: Bridge.media-backend == MediaBackendKind.migration ? @tr("Migration (in-process)") : @tr("gst-pop ({})", Bridge.gstpop-url);
+                        clicked => {
+                            PanelBridge.push(Panel.media-backend);
+                        }
                     }
+
                     SettingsValueRow {
                         icon: "⚠️";
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Test functionality");
-                        clicked => { PanelBridge.push(Panel.test-functionality); }
+                        clicked => {
+                            PanelBridge.push(Panel.test-functionality);
+                        }
                     }
                 }
 
@@ -402,7 +513,9 @@ export component FullSettingsPage inherits Rectangle {
                         icon-bg: Theme.icon-bg-neutral;
                         title: @tr("Backup & reset");
                         value: @tr("open-panel-action" => "Open");
-                        clicked => { PanelBridge.push(Panel.backup-reset); }
+                        clicked => {
+                            PanelBridge.push(Panel.backup-reset);
+                        }
                     }
                 }
 
@@ -416,6 +529,7 @@ export component FullSettingsPage inherits Rectangle {
                         value: Bridge.app-version;
                         show-chevron: false;
                     }
+
                     SettingsValueRow {
                         icon: "🌐";
                         icon-bg: Theme.icon-bg-neutral;
