@@ -3,7 +3,7 @@ use crate::{
     media_bridge::StreamBridge,
     nodes::{
         CameraSourceNode, DestinationNode, MixerNode, ScreenCaptureNode, SourceNode,
-        VideoGeneratorNode,
+        VideoGeneratorNode, WidgetSourceNode,
     },
     protocol::{
         Command, CommandResult, ControlMode, ControlPoint, Info, NodeInfo, Scene, Widget,
@@ -35,6 +35,7 @@ enum NodeRecord {
     Destination(DestinationNode),
     Mixer(MixerNode),
     VideoGenerator(VideoGeneratorNode),
+    WidgetSource(WidgetSourceNode),
 }
 
 impl NodeRecord {
@@ -44,6 +45,7 @@ impl NodeRecord {
             Self::ScreenCapture(_) | Self::CameraSource(_) => false,
             Self::Mixer(node) => node.audio_enabled,
             Self::VideoGenerator(node) => node.audio_enabled,
+            Self::WidgetSource(_) => false,
             Self::Destination(_) => false,
         }
     }
@@ -55,6 +57,7 @@ impl NodeRecord {
             Self::CameraSource(_) => true,
             Self::Mixer(node) => node.video_enabled,
             Self::VideoGenerator(node) => node.video_enabled,
+            Self::WidgetSource(_) => true,
             Self::Destination(_) => false,
         }
     }
@@ -66,7 +69,8 @@ impl NodeRecord {
             Self::Source(_)
             | Self::ScreenCapture(_)
             | Self::CameraSource(_)
-            | Self::VideoGenerator(_) => false,
+            | Self::VideoGenerator(_)
+            | Self::WidgetSource(_) => false,
         }
     }
 
@@ -77,7 +81,8 @@ impl NodeRecord {
             Self::Source(_)
             | Self::ScreenCapture(_)
             | Self::CameraSource(_)
-            | Self::VideoGenerator(_) => false,
+            | Self::VideoGenerator(_)
+            | Self::WidgetSource(_) => false,
         }
     }
 
@@ -89,6 +94,7 @@ impl NodeRecord {
             Self::Destination(node) => node.as_info(),
             Self::Mixer(node) => node.as_info(),
             Self::VideoGenerator(node) => node.as_compatible_source_info(),
+            Self::WidgetSource(node) => node.as_compatible_source_info(),
         }
     }
 
@@ -104,6 +110,7 @@ impl NodeRecord {
             Self::Destination(node) => node.schedule(cue_time, end_time),
             Self::Mixer(node) => node.schedule(cue_time, end_time),
             Self::VideoGenerator(node) => node.schedule(cue_time, end_time),
+            Self::WidgetSource(node) => node.schedule(cue_time, end_time),
         }
     }
 
@@ -115,6 +122,7 @@ impl NodeRecord {
             Self::Destination(node) => node.stop(),
             Self::Mixer(node) => node.stop(),
             Self::VideoGenerator(node) => node.stop(),
+            Self::WidgetSource(node) => node.stop(),
         }
     }
 
@@ -126,6 +134,7 @@ impl NodeRecord {
             Self::Destination(node) => node.mark_error(message),
             Self::Mixer(node) => node.mark_error(message),
             Self::VideoGenerator(node) => node.mark_error(message),
+            Self::WidgetSource(node) => node.mark_error(message),
         }
     }
 
@@ -136,6 +145,7 @@ impl NodeRecord {
             Self::CameraSource(node) => node.add_consumer_link(link_id, audio, video),
             Self::Mixer(node) => node.connect_output_consumer(link_id, audio, video),
             Self::VideoGenerator(node) => node.add_consumer_link(link_id, audio, video),
+            Self::WidgetSource(node) => node.add_consumer_link(link_id, audio, video),
             Self::Destination(_) => {}
         }
     }
@@ -147,6 +157,7 @@ impl NodeRecord {
             Self::CameraSource(node) => node.remove_consumer_link(link_id),
             Self::Mixer(node) => node.disconnect_output_consumer(link_id),
             Self::VideoGenerator(node) => node.remove_consumer_link(link_id),
+            Self::WidgetSource(node) => node.remove_consumer_link(link_id),
             Self::Destination(_) => {}
         }
     }
@@ -159,6 +170,7 @@ impl NodeRecord {
             Self::Destination(node) => node.refresh(),
             Self::Mixer(node) => node.refresh(),
             Self::VideoGenerator(node) => node.refresh(),
+            Self::WidgetSource(node) => node.refresh(),
         };
 
         if let Err(err) = result {
@@ -171,7 +183,7 @@ impl NodeRecord {
             Self::Source(node) => node.live_audio_appsink(),
             Self::ScreenCapture(_) | Self::CameraSource(_) => None,
             Self::Mixer(node) => node.live_audio_output_appsink(),
-            Self::VideoGenerator(_) | Self::Destination(_) => None,
+            Self::VideoGenerator(_) | Self::WidgetSource(_) | Self::Destination(_) => None,
         }
     }
 
@@ -182,6 +194,7 @@ impl NodeRecord {
             Self::CameraSource(node) => node.live_video_appsink(),
             Self::Mixer(node) => node.live_video_output_appsink(),
             Self::VideoGenerator(node) => node.live_video_appsink(),
+            Self::WidgetSource(node) => node.live_video_appsink(),
             Self::Destination(_) => None,
         }
     }
@@ -193,7 +206,8 @@ impl NodeRecord {
             Self::Source(_)
             | Self::ScreenCapture(_)
             | Self::CameraSource(_)
-            | Self::VideoGenerator(_) => None,
+            | Self::VideoGenerator(_)
+            | Self::WidgetSource(_) => None,
         }
     }
 
@@ -204,7 +218,8 @@ impl NodeRecord {
             Self::Source(_)
             | Self::ScreenCapture(_)
             | Self::CameraSource(_)
-            | Self::VideoGenerator(_) => None,
+            | Self::VideoGenerator(_)
+            | Self::WidgetSource(_) => None,
         }
     }
 }
@@ -703,7 +718,8 @@ impl NodeManager {
                 NodeRecord::Source(_)
                 | NodeRecord::ScreenCapture(_)
                 | NodeRecord::CameraSource(_)
-                | NodeRecord::VideoGenerator(_),
+                | NodeRecord::VideoGenerator(_)
+                | NodeRecord::WidgetSource(_),
             ) => Err(format!("Node {sink_id} is not a consumer")),
             None => Err(format!("No consumer with id {sink_id}")),
         };
@@ -747,7 +763,8 @@ impl NodeManager {
                 NodeRecord::Source(_)
                 | NodeRecord::ScreenCapture(_)
                 | NodeRecord::CameraSource(_)
-                | NodeRecord::VideoGenerator(_) => {}
+                | NodeRecord::VideoGenerator(_)
+                | NodeRecord::WidgetSource(_) => {}
             }
         }
 
@@ -930,9 +947,16 @@ impl NodeManager {
         if self.scene_registry.widgets.contains_key(&widget.id) {
             return CommandResult::Error(format!("A widget already exists with id {}", widget.id));
         }
+        let widget_id = widget.id.clone();
         self.scene_registry
             .widgets
-            .insert(widget.id.clone(), widget);
+            .insert(widget_id.clone(), widget.clone());
+        if !matches!(widget.widget_type, WidgetType::Crop { .. }) {
+            self.nodes.insert(
+                widget_id.clone(),
+                NodeRecord::WidgetSource(WidgetSourceNode::new(widget_id, widget)),
+            );
+        }
         CommandResult::Success
     }
 
@@ -943,7 +967,18 @@ impl NodeManager {
         let widget_id = widget.id.clone();
         self.scene_registry
             .widgets
-            .insert(widget_id.clone(), widget);
+            .insert(widget_id.clone(), widget.clone());
+        match &widget.widget_type {
+            WidgetType::Crop { .. } => {
+                self.nodes.remove(&widget_id);
+            }
+            _ => {
+                self.nodes.insert(
+                    widget_id.clone(),
+                    NodeRecord::WidgetSource(WidgetSourceNode::new(widget_id.clone(), widget)),
+                );
+            }
+        }
         if self
             .scene_registry
             .current_scene_id
@@ -977,6 +1012,7 @@ impl NodeManager {
         for scene in self.scene_registry.scenes.values_mut() {
             scene.widgets.retain(|p| p.widget_id != widget_id);
         }
+        self.nodes.remove(widget_id);
         CommandResult::Success
     }
 

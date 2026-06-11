@@ -6,12 +6,14 @@ publish = false
 description = "FCast media-graph migration runtime (extracted from android-sender)."
 
 [dependencies]
+ab_glyph = "0.2"
 anyhow.workspace = true
 chrono.workspace = true
 gst.workspace = true
 gst-app.workspace = true
 gst-video.workspace = true
 gst_rs_webrtc.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 lazy_static.workspace = true
 mcore.workspace = true
 parking_lot.workspace = true
