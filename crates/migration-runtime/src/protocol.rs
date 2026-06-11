@@ -42,6 +42,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_opacity() -> f64 {
+    1.0
+}
+
 /// Default SRT end-to-end latency in milliseconds.
 ///
 /// 200 ms matches the `gst-launch` `srtsink` default and is a safe starting
@@ -85,6 +89,93 @@ impl PartialOrd for ControlPoint {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WidgetLayout {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+    #[serde(default)]
+    pub rotation: f64,
+    #[serde(default = "default_opacity")]
+    pub opacity: f64,
+}
+
+impl Default for WidgetLayout {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 100.0,
+            rotation: 0.0,
+            opacity: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SceneWidgetPlacement {
+    pub widget_id: String,
+    pub layout: WidgetLayout,
+    #[serde(default = "default_as_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub zorder: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Scene {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_as_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub widgets: Vec<SceneWidgetPlacement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quick_switch_group: Option<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Widget {
+    pub id: String,
+    pub name: String,
+    #[serde(flatten)]
+    pub widget_type: WidgetType,
+    #[serde(default = "default_as_true")]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum WidgetType {
+    Text {
+        format: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        font_size: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color: Option<String>,
+    },
+    Image {
+        asset_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scale_mode: Option<String>,
+    },
+    Crop {
+        top: f64,
+        bottom: f64,
+        left: f64,
+        right: f64,
+    },
+    Clock {
+        format: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        font_size: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        color: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,6 +228,32 @@ pub enum Command {
         audio: bool,
         #[serde(default = "default_as_true")]
         video: bool,
+    },
+    CreateScene {
+        scene: Scene,
+    },
+    UpdateScene {
+        scene: Scene,
+    },
+    RemoveScene {
+        scene_id: String,
+    },
+    SetScene {
+        scene_id: String,
+    },
+    CreateWidget {
+        widget: Widget,
+    },
+    UpdateWidget {
+        widget: Widget,
+    },
+    RemoveWidget {
+        widget_id: String,
+    },
+    UpdateWidgetLayout {
+        scene_id: String,
+        widget_id: String,
+        layout: WidgetLayout,
     },
     CreateMixer {
         id: String,
@@ -577,6 +694,84 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<DestinationFamily>(&json).unwrap(),
             family
+        );
+    }
+
+    #[test]
+    fn widget_text_flat_roundtrip() {
+        let w = Widget {
+            id: "w1".into(),
+            name: "Title".into(),
+            enabled: true,
+            widget_type: WidgetType::Text {
+                format: "Hello".into(),
+                font_size: Some(32),
+                color: None,
+            },
+        };
+        let json = serde_json::to_string(&w).unwrap();
+        assert!(json.contains(r#"\"type\":\"text\""#));
+        assert_eq!(serde_json::from_str::<Widget>(&json).unwrap(), w);
+    }
+
+    #[test]
+    fn scene_with_placement_roundtrip() {
+        let s = Scene {
+            id: "s1".into(),
+            name: "Main".into(),
+            enabled: true,
+            quick_switch_group: Some(1),
+            widgets: vec![SceneWidgetPlacement {
+                widget_id: "w1".into(),
+                enabled: true,
+                zorder: 1,
+                layout: WidgetLayout {
+                    x: 10.0,
+                    y: 10.0,
+                    width: 30.0,
+                    height: 10.0,
+                    rotation: 0.0,
+                    opacity: 0.9,
+                },
+            }],
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert_eq!(serde_json::from_str::<Scene>(&json).unwrap(), s);
+    }
+
+    #[test]
+    fn widget_layout_defaults() {
+        let l: WidgetLayout =
+            serde_json::from_str(r#"{"x":0,"y":0,"width":50,"height":50}"#).unwrap();
+        assert_eq!(l.opacity, 1.0);
+        assert_eq!(l.rotation, 0.0);
+    }
+
+    #[test]
+    fn set_scene_command_wire_shape() {
+        let c = Command::SetScene {
+            scene_id: "s1".into(),
+        };
+        let v = serde_json::to_value(&c).unwrap();
+        assert!(v.get("setscene").is_some());
+    }
+
+    #[test]
+    fn crop_widget_roundtrip() {
+        let w = Widget {
+            id: "c1".into(),
+            name: "Reframe".into(),
+            enabled: true,
+            widget_type: WidgetType::Crop {
+                top: 5.0,
+                bottom: 5.0,
+                left: 0.0,
+                right: 0.0,
+            },
+        };
+        assert_eq!(
+            serde_json::from_str::<Widget>(&serde_json::to_string(&w).unwrap()).unwrap(),
+            w
         );
     }
 

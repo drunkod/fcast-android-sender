@@ -5,7 +5,10 @@ use crate::{
         CameraSourceNode, DestinationNode, MixerNode, ScreenCaptureNode, SourceNode,
         VideoGeneratorNode,
     },
-    protocol::{Command, CommandResult, ControlPoint, Info, NodeInfo},
+    protocol::{
+        Command, CommandResult, ControlMode, ControlPoint, Info, NodeInfo, Scene, Widget,
+        WidgetLayout, WidgetType,
+    },
 };
 use chrono::{DateTime, Utc};
 use gst_app::{AppSink, AppSrc};
@@ -206,6 +209,14 @@ impl NodeRecord {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+struct SceneRegistry {
+    scenes: HashMap<String, Scene>,
+    widgets: HashMap<String, Widget>,
+    current_scene_id: Option<String>,
+    active_widget_links: HashMap<String, String>,
+}
+
 #[derive(Debug, Default)]
 pub struct NodeManager {
     started: bool,
@@ -213,6 +224,7 @@ pub struct NodeManager {
     nodes: HashMap<String, NodeRecord>,
     links: HashMap<String, LinkRecord>,
     media_bridges: HashMap<String, StreamBridge>,
+    scene_registry: SceneRegistry,
 }
 
 impl NodeManager {
@@ -409,6 +421,21 @@ impl NodeManager {
                 audio,
                 video,
             } => (self.create_destination(id, family, audio, video), true),
+            Command::CreateScene { scene } => (self.create_scene(scene), false),
+            Command::UpdateScene { scene } => (self.update_scene(scene), false),
+            Command::RemoveScene { scene_id } => (self.remove_scene(&scene_id), false),
+            Command::SetScene { scene_id } => (self.apply_scene(&scene_id), true),
+            Command::CreateWidget { widget } => (self.create_widget(widget), false),
+            Command::UpdateWidget { widget } => (self.update_widget(widget), false),
+            Command::RemoveWidget { widget_id } => (self.remove_widget(&widget_id), true),
+            Command::UpdateWidgetLayout {
+                scene_id,
+                widget_id,
+                layout,
+            } => (
+                self.update_widget_layout(&scene_id, &widget_id, layout),
+                true,
+            ),
             Command::CreateMixer {
                 id,
                 config,
@@ -836,6 +863,262 @@ impl NodeManager {
         ))
     }
 
+    fn scene_widget_link_id(widget_id: &str) -> String {
+        format!("scene-w-{widget_id}")
+    }
+
+    fn slot_config_from_layout(layout: &WidgetLayout, zorder: i32) -> HashMap<String, Value> {
+        HashMap::from([
+            ("video::x".to_string(), serde_json::json!(layout.x)),
+            ("video::y".to_string(), serde_json::json!(layout.y)),
+            ("video::width".to_string(), serde_json::json!(layout.width)),
+            (
+                "video::height".to_string(),
+                serde_json::json!(layout.height),
+            ),
+            ("video::zorder".to_string(), serde_json::json!(zorder)),
+            (
+                "video::alpha".to_string(),
+                serde_json::json!(layout.opacity),
+            ),
+        ])
+    }
+
+    fn create_scene(&mut self, scene: Scene) -> CommandResult {
+        if self.scene_registry.scenes.contains_key(&scene.id) {
+            return CommandResult::Error(format!("A scene already exists with id {}", scene.id));
+        }
+        self.scene_registry.scenes.insert(scene.id.clone(), scene);
+        CommandResult::Success
+    }
+
+    fn update_scene(&mut self, scene: Scene) -> CommandResult {
+        if !self.scene_registry.scenes.contains_key(&scene.id) {
+            return CommandResult::Error(format!("No scene with id {}", scene.id));
+        }
+        let should_apply =
+            self.scene_registry.current_scene_id.as_deref() == Some(scene.id.as_str());
+        let scene_id = scene.id.clone();
+        self.scene_registry.scenes.insert(scene_id.clone(), scene);
+        if should_apply {
+            return self.apply_scene(&scene_id);
+        }
+        CommandResult::Success
+    }
+
+    fn remove_scene(&mut self, scene_id: &str) -> CommandResult {
+        if self.scene_registry.scenes.remove(scene_id).is_none() {
+            return CommandResult::Error(format!("No scene with id {scene_id}"));
+        }
+        if self.scene_registry.current_scene_id.as_deref() == Some(scene_id) {
+            let active_links = self
+                .scene_registry
+                .active_widget_links
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            for link_id in active_links {
+                let _ = self.disconnect(&link_id);
+            }
+            self.scene_registry.active_widget_links.clear();
+            self.scene_registry.current_scene_id = None;
+        }
+        CommandResult::Success
+    }
+
+    fn create_widget(&mut self, widget: Widget) -> CommandResult {
+        if self.scene_registry.widgets.contains_key(&widget.id) {
+            return CommandResult::Error(format!("A widget already exists with id {}", widget.id));
+        }
+        self.scene_registry
+            .widgets
+            .insert(widget.id.clone(), widget);
+        CommandResult::Success
+    }
+
+    fn update_widget(&mut self, widget: Widget) -> CommandResult {
+        if !self.scene_registry.widgets.contains_key(&widget.id) {
+            return CommandResult::Error(format!("No widget with id {}", widget.id));
+        }
+        let widget_id = widget.id.clone();
+        self.scene_registry
+            .widgets
+            .insert(widget_id.clone(), widget);
+        if self
+            .scene_registry
+            .current_scene_id
+            .as_deref()
+            .is_some_and(|scene_id| {
+                self.scene_registry
+                    .scenes
+                    .get(scene_id)
+                    .is_some_and(|scene| scene.widgets.iter().any(|p| p.widget_id == widget_id))
+            })
+        {
+            let current_scene_id = self.scene_registry.current_scene_id.clone().unwrap();
+            return self.apply_scene(&current_scene_id);
+        }
+        CommandResult::Success
+    }
+
+    fn remove_widget(&mut self, widget_id: &str) -> CommandResult {
+        if self.scene_registry.widgets.remove(widget_id).is_none() {
+            return CommandResult::Error(format!("No widget with id {widget_id}"));
+        }
+        let link_id = Self::scene_widget_link_id(widget_id);
+        if self
+            .scene_registry
+            .active_widget_links
+            .remove(&link_id)
+            .is_some()
+        {
+            let _ = self.disconnect(&link_id);
+        }
+        for scene in self.scene_registry.scenes.values_mut() {
+            scene.widgets.retain(|p| p.widget_id != widget_id);
+        }
+        CommandResult::Success
+    }
+
+    fn update_widget_layout(
+        &mut self,
+        scene_id: &str,
+        widget_id: &str,
+        layout: WidgetLayout,
+    ) -> CommandResult {
+        let zorder = {
+            let Some(scene) = self.scene_registry.scenes.get_mut(scene_id) else {
+                return CommandResult::Error(format!("No scene with id {scene_id}"));
+            };
+            let Some(placement) = scene.widgets.iter_mut().find(|p| p.widget_id == widget_id)
+            else {
+                return CommandResult::Error(format!("Scene {scene_id} has no widget {widget_id}"));
+            };
+            placement.layout = layout.clone();
+            placement.zorder
+        };
+        if self.scene_registry.current_scene_id.as_deref() == Some(scene_id) {
+            self.update_slot_layout(&Self::scene_widget_link_id(widget_id), &layout, zorder)
+        } else {
+            CommandResult::Success
+        }
+    }
+
+    fn update_slot_layout(
+        &mut self,
+        link_id: &str,
+        layout: &WidgetLayout,
+        zorder: i32,
+    ) -> CommandResult {
+        let properties = [
+            ("video::x", serde_json::json!(layout.x)),
+            ("video::y", serde_json::json!(layout.y)),
+            ("video::width", serde_json::json!(layout.width)),
+            ("video::height", serde_json::json!(layout.height)),
+            ("video::zorder", serde_json::json!(zorder)),
+            ("video::alpha", serde_json::json!(layout.opacity)),
+        ];
+
+        for (idx, (property, value)) in properties.into_iter().enumerate() {
+            let control_point = ControlPoint {
+                id: format!("{link_id}-{idx}"),
+                time: Utc::now(),
+                value,
+                mode: ControlMode::Set,
+            };
+            if let CommandResult::Error(err) =
+                self.add_control_point(link_id, property, control_point)
+            {
+                return CommandResult::Error(err);
+            }
+        }
+        CommandResult::Success
+    }
+
+    fn apply_scene(&mut self, scene_id: &str) -> CommandResult {
+        let Some(scene) = self.scene_registry.scenes.get(scene_id).cloned() else {
+            return CommandResult::Error(format!("No scene with id {scene_id}"));
+        };
+
+        let desired = scene
+            .widgets
+            .iter()
+            .filter(|placement| placement.enabled)
+            .filter(|placement| {
+                self.scene_registry
+                    .widgets
+                    .get(&placement.widget_id)
+                    .is_some_and(|widget| {
+                        widget.enabled && !matches!(widget.widget_type, WidgetType::Crop { .. })
+                    })
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let desired_ids = desired
+            .iter()
+            .map(|placement| placement.widget_id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        let to_remove = self
+            .scene_registry
+            .active_widget_links
+            .iter()
+            .filter(|(_, widget_id)| !desired_ids.contains(widget_id.as_str()))
+            .map(|(link_id, _)| link_id.clone())
+            .collect::<Vec<_>>();
+        for link_id in to_remove {
+            let _ = self.disconnect(&link_id);
+            self.scene_registry.active_widget_links.remove(&link_id);
+        }
+
+        let mixer_id = self
+            .nodes
+            .iter()
+            .find_map(|(id, node)| matches!(node, NodeRecord::Mixer(_)).then_some(id.clone()));
+        let Some(mixer_id) = mixer_id else {
+            self.scene_registry.current_scene_id = Some(scene_id.to_string());
+            return CommandResult::Success;
+        };
+
+        for placement in desired {
+            let widget_id = placement.widget_id.clone();
+            if !self.nodes.contains_key(&widget_id) {
+                continue;
+            }
+            let link_id = Self::scene_widget_link_id(&widget_id);
+            if !self
+                .scene_registry
+                .active_widget_links
+                .contains_key(&link_id)
+            {
+                let config = Self::slot_config_from_layout(&placement.layout, placement.zorder);
+                match self.connect(
+                    link_id.clone(),
+                    widget_id.clone(),
+                    mixer_id.clone(),
+                    false,
+                    true,
+                    Some(config),
+                ) {
+                    CommandResult::Success => {
+                        self.scene_registry
+                            .active_widget_links
+                            .insert(link_id, widget_id.clone());
+                    }
+                    err @ CommandResult::Error(_) => return err,
+                    other => return other,
+                }
+            } else if let CommandResult::Error(err) =
+                self.update_slot_layout(&link_id, &placement.layout, placement.zorder)
+            {
+                return CommandResult::Error(err);
+            }
+        }
+
+        self.scene_registry.current_scene_id = Some(scene_id.to_string());
+        CommandResult::Success
+    }
+
     fn remove_control_point(
         &mut self,
         controller_id: &str,
@@ -879,7 +1162,10 @@ impl NodeManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{Command, ControlMode, DestinationFamily, State};
+    use crate::protocol::{
+        Command, ControlMode, DestinationFamily, Scene, SceneWidgetPlacement, State, Widget,
+        WidgetLayout, WidgetType,
+    };
     use chrono::Duration;
     use serde_json::json;
 
@@ -1729,5 +2015,134 @@ mod tests {
             }
             other => panic!("expected Info, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn slot_config_maps_layout_fields() {
+        let cfg = NodeManager::slot_config_from_layout(
+            &WidgetLayout {
+                x: 10.0,
+                y: 20.0,
+                width: 30.0,
+                height: 40.0,
+                rotation: 90.0,
+                opacity: 0.5,
+            },
+            3,
+        );
+        assert_eq!(cfg["video::x"], serde_json::json!(10.0));
+        assert_eq!(cfg["video::y"], serde_json::json!(20.0));
+        assert_eq!(cfg["video::width"], serde_json::json!(30.0));
+        assert_eq!(cfg["video::height"], serde_json::json!(40.0));
+        assert_eq!(cfg["video::zorder"], serde_json::json!(3));
+        assert_eq!(cfg["video::alpha"], serde_json::json!(0.5));
+        assert!(!cfg.contains_key("video::rotation"));
+    }
+
+    #[test]
+    fn apply_scene_diffs_widget_links() {
+        let mut manager = started_manager();
+
+        assert!(matches!(
+            manager.dispatch(Command::CreateMixer {
+                id: "mixer-1".into(),
+                config: None,
+                audio: false,
+                video: true,
+            }),
+            CommandResult::Success
+        ));
+        for widget_id in ["w1", "w2", "w3"] {
+            assert!(matches!(
+                manager.dispatch(Command::CreateSource {
+                    id: widget_id.to_string(),
+                    uri: format!("file:///{widget_id}.png"),
+                    audio: false,
+                    video: true,
+                }),
+                CommandResult::Success
+            ));
+            assert!(matches!(
+                manager.dispatch(Command::CreateWidget {
+                    widget: Widget {
+                        id: widget_id.to_string(),
+                        name: widget_id.to_string(),
+                        enabled: true,
+                        widget_type: WidgetType::Image {
+                            asset_id: format!("asset-{widget_id}"),
+                            scale_mode: None,
+                        },
+                    },
+                }),
+                CommandResult::Success
+            ));
+        }
+
+        let mk_placement = |widget_id: &str, zorder: i32| SceneWidgetPlacement {
+            widget_id: widget_id.to_string(),
+            enabled: true,
+            zorder,
+            layout: WidgetLayout {
+                x: zorder as f64,
+                y: 0.0,
+                width: 20.0,
+                height: 20.0,
+                rotation: 0.0,
+                opacity: 1.0,
+            },
+        };
+
+        assert!(matches!(
+            manager.dispatch(Command::CreateScene {
+                scene: Scene {
+                    id: "a".into(),
+                    name: "A".into(),
+                    enabled: true,
+                    widgets: vec![mk_placement("w1", 1), mk_placement("w2", 2)],
+                    quick_switch_group: Some(1),
+                },
+            }),
+            CommandResult::Success
+        ));
+        assert!(matches!(
+            manager.dispatch(Command::CreateScene {
+                scene: Scene {
+                    id: "b".into(),
+                    name: "B".into(),
+                    enabled: true,
+                    widgets: vec![mk_placement("w2", 2), mk_placement("w3", 3)],
+                    quick_switch_group: Some(1),
+                },
+            }),
+            CommandResult::Success
+        ));
+
+        assert!(matches!(
+            manager.dispatch(Command::SetScene {
+                scene_id: "a".into()
+            }),
+            CommandResult::Success
+        ));
+        assert!(manager.links.contains_key("scene-w-w1"));
+        assert!(manager.links.contains_key("scene-w-w2"));
+        assert_eq!(manager.scene_registry.active_widget_links.len(), 2);
+
+        assert!(matches!(
+            manager.dispatch(Command::SetScene {
+                scene_id: "b".into()
+            }),
+            CommandResult::Success
+        ));
+        assert!(!manager.links.contains_key("scene-w-w1"));
+        assert!(manager.links.contains_key("scene-w-w2"));
+        assert!(manager.links.contains_key("scene-w-w3"));
+        assert_eq!(
+            manager.scene_registry.active_widget_links.get("scene-w-w2"),
+            Some(&"w2".to_string())
+        );
+        assert_eq!(
+            manager.scene_registry.active_widget_links.get("scene-w-w3"),
+            Some(&"w3".to_string())
+        );
     }
 }
