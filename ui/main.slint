@@ -125,6 +125,8 @@ import {
 }      from "pages/protocol_srt_settings_page.slint";
 import { SceneListPage } from "pages/scene_list_page.slint";
 import { SceneEditPage } from "pages/scene_edit_page.slint";
+import { WidgetWizardPage } from "pages/widget_wizard_page.slint";
+import { SceneWidgetLayoutPage } from "pages/scene_widget_layout_page.slint";
 import { Theme } from "theme.slint";
 import { CastControlBar } from "components/control_bar.slint";
 import { InfoBanner } from "components/info_banner.slint";
@@ -255,6 +257,8 @@ export component MainWindow inherits Window {
             if PanelBridge.active == Panel.protocol-srt-settings:  ProtocolSrtSettingsPage { }
             if PanelBridge.active == Panel.scene-list:            SceneListPage { }
             if PanelBridge.active == Panel.scene-edit:            SceneEditPage { }
+            if PanelBridge.active == Panel.widget-wizard:         WidgetWizardPage { }
+            if PanelBridge.active == Panel.scene-widget-layout:   SceneWidgetLayoutPage { }
         }
 
         // ── Stream status overlays (top-left + top-right) ────────────────────────

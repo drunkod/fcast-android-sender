@@ -1,0 +1,250 @@
+import { Theme } from "../theme.slint";
+import { Bridge, WidgetTypeChoice } from "../bridge.slint";
+import { PanelBridge } from "../state/panel_bridge.slint";
+import { PanelHeader } from "../components/panel_chrome.slint";
+import { RowColors } from "../components/settings_rows.slint";
+import { Input } from "../slintcn/components/input.slint";
+import { Slider } from "../slintcn/components/slider.slint";
+import {
+    Button,
+    ButtonVariant,
+    ButtonSize,
+} from "../slintcn/components/button.slint";
+
+export component WidgetWizardPage inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    in-out property <int> type-idx: 0;
+
+    function sync-type() {
+        Bridge.draft-widget-type = root.type-idx == 1 ? WidgetTypeChoice.image : root.type-idx == 2 ? WidgetTypeChoice.crop : root.type-idx == 3 ? WidgetTypeChoice.clock : WidgetTypeChoice.text;
+    }
+
+    forward-focus: scope;
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                PanelBridge.pop();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            PanelHeader {
+                title: @tr("New Widget");
+                close-clicked => {
+                    PanelBridge.pop();
+                }
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                viewport-height: body.preferred-height;
+                body := VerticalLayout {
+                    padding: Theme.padding-screen;
+                    spacing: Theme.spacing-loose;
+                    alignment: start;
+
+                    Text {
+                        text: @tr("TYPE");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    HorizontalLayout {
+                        spacing: Theme.spacing-tight;
+                        for label[idx] in [@tr("Text"), @tr("Image"), @tr("Crop"), @tr("Clock")]: Button {
+                            text: label;
+                            variant: root.type-idx == idx ? ButtonVariant.default : ButtonVariant.outline;
+                            size: ButtonSize.sm;
+                            clicked => {
+                                root.type-idx = idx;
+                                root.sync-type();
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("NAME");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Rectangle {
+                        height: 56px;
+                        background: RowColors.normal;
+                        border-radius: Theme.radius-card;
+                        VerticalLayout {
+                            padding: Theme.padding-screen;
+                            Input {
+                                text <=> Bridge.draft-widget-name;
+                                placeholder: @tr("Widget name");
+                            }
+                        }
+                    }
+
+                    if root.type-idx == 0: VerticalLayout {
+                        spacing: Theme.spacing-default;
+                        Text {
+                            text: @tr("TEXT");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                            font-weight: 600;
+                        }
+
+                        Rectangle {
+                            height: 56px;
+                            background: RowColors.normal;
+                            border-radius: Theme.radius-card;
+                            VerticalLayout {
+                                padding: Theme.padding-screen;
+                                Input {
+                                    text <=> Bridge.draft-widget-text-format;
+                                    placeholder: "{time} · My Stream";
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: @tr("Font size: {}", "\{Bridge.draft-widget-font-size}");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                        }
+
+                        Slider {
+                            value: Bridge.draft-widget-font-size;
+                            minimum: 12;
+                            maximum: 96;
+                            changed(v) => {
+                                Bridge.draft-widget-font-size = Math.round(v);
+                            }
+                        }
+                    }
+
+                    if root.type-idx == 1: VerticalLayout {
+                        spacing: Theme.spacing-default;
+                        Text {
+                            text: @tr("IMAGE");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                            font-weight: 600;
+                        }
+
+                        Button {
+                            text: Bridge.draft-widget-image-path != "" ? @tr("Change image") : @tr("Pick image");
+                            variant: ButtonVariant.outline;
+                            size: ButtonSize.default;
+                            clicked => {
+                                Bridge.pick-widget-image();
+                            }
+                        }
+
+                        if Bridge.draft-widget-image-path != "": Text {
+                            text: Bridge.draft-widget-image-path;
+                            color: Theme.text-disabled;
+                            font-size: Theme.font-size-label;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    if root.type-idx == 2: VerticalLayout {
+                        spacing: Theme.spacing-default;
+                        Text {
+                            text: @tr("CROP (%)");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: @tr("Top: {}", "\{Math.round(Bridge.draft-crop-top)}");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                        }
+
+                        Slider {
+                            value <=> Bridge.draft-crop-top;
+                            minimum: 0;
+                            maximum: 50;
+                        }
+
+                        Text {
+                            text: @tr("Bottom: {}", "\{Math.round(Bridge.draft-crop-bottom)}");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                        }
+
+                        Slider {
+                            value <=> Bridge.draft-crop-bottom;
+                            minimum: 0;
+                            maximum: 50;
+                        }
+
+                        Text {
+                            text: @tr("Left: {}", "\{Math.round(Bridge.draft-crop-left)}");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                        }
+
+                        Slider {
+                            value <=> Bridge.draft-crop-left;
+                            minimum: 0;
+                            maximum: 50;
+                        }
+
+                        Text {
+                            text: @tr("Right: {}", "\{Math.round(Bridge.draft-crop-right)}");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                        }
+
+                        Slider {
+                            value <=> Bridge.draft-crop-right;
+                            minimum: 0;
+                            maximum: 50;
+                        }
+                    }
+
+                    if root.type-idx == 3: VerticalLayout {
+                        spacing: Theme.spacing-default;
+                        Text {
+                            text: @tr("CLOCK FORMAT");
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-size-label;
+                            font-weight: 600;
+                        }
+
+                        Rectangle {
+                            height: 56px;
+                            background: RowColors.normal;
+                            border-radius: Theme.radius-card;
+                            VerticalLayout {
+                                padding: Theme.padding-screen;
+                                Input {
+                                    text <=> Bridge.draft-widget-clock-format;
+                                    placeholder: "%H:%M:%S";
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        text: @tr("Create Widget");
+                        variant: ButtonVariant.default;
+                        size: ButtonSize.lg;
+                        disabled: Bridge.draft-widget-name == "";
+                        clicked => {
+                            root.sync-type();
+                            Bridge.create-widget();
+                            PanelBridge.pop();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
