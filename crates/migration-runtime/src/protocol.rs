@@ -51,6 +51,14 @@ fn default_srt_latency() -> i32 {
     200
 }
 
+fn default_rist_port() -> u32 {
+    5004
+}
+
+fn default_rist_sender_buffer_ms() -> u32 {
+    1000
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ControlMode {
@@ -228,6 +236,15 @@ pub enum DestinationFamily {
         /// AES key length in bytes: 16 (AES-128), 24 (AES-192), 32 (AES-256).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pbkeylen: Option<i32>,
+    },
+    Rist {
+        /// Receiver address (RIST is point-to-point over UDP+ARQ).
+        address: String,
+        #[serde(default = "default_rist_port")]
+        port: u32,
+        /// Sender-side retransmit buffer in milliseconds.
+        #[serde(default = "default_rist_sender_buffer_ms")]
+        sender_buffer_ms: u32,
     },
 }
 
@@ -512,6 +529,11 @@ mod tests {
                 passphrase: None,
                 pbkeylen: None,
             },
+            DestinationFamily::Rist {
+                address: "10.0.0.5".to_string(),
+                port: 5004,
+                sender_buffer_ms: 1000,
+            },
         ];
 
         for family in families {
@@ -519,6 +541,43 @@ mod tests {
             let decoded: DestinationFamily = serde_json::from_str(&encoded).unwrap();
             assert_eq!(decoded, family);
         }
+    }
+
+    #[test]
+    fn rist_destination_defaults_when_omitted() {
+        let cmd: Command = serde_json::from_str(
+            r#"{"createdestination":{"id":"r1","family":{"Rist":{"address":"10.0.0.5"}}}}"#,
+        )
+        .unwrap();
+        match cmd {
+            Command::CreateDestination {
+                family:
+                    DestinationFamily::Rist {
+                        port,
+                        sender_buffer_ms,
+                        ..
+                    },
+                ..
+            } => {
+                assert_eq!(port, 5004);
+                assert_eq!(sender_buffer_ms, 1000);
+            }
+            other => panic!("expected Rist, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rist_destination_roundtrip() {
+        let family = DestinationFamily::Rist {
+            address: "10.0.0.5".into(),
+            port: 7000,
+            sender_buffer_ms: 1500,
+        };
+        let json = serde_json::to_string(&family).unwrap();
+        assert_eq!(
+            serde_json::from_str::<DestinationFamily>(&json).unwrap(),
+            family
+        );
     }
 
     #[test]

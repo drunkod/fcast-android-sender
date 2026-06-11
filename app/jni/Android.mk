@@ -61,6 +61,7 @@ GSTREAMER_PLUGINS := \
     dtls \
     srtp \
     srt \
+    rist \
     webrtc \
     nice \
     rsrtp \
