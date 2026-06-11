@@ -1,0 +1,222 @@
+import { Theme } from "../theme.slint";
+import { Bridge, Panel } from "../bridge.slint";
+import { PanelBridge } from "../state/panel_bridge.slint";
+import { PanelHeader } from "../components/panel_chrome.slint";
+import { RowColors } from "../components/settings_rows.slint";
+import { Switch } from "../slintcn/components/switch.slint";
+import {
+    Button,
+    ButtonVariant,
+    ButtonSize,
+} from "../slintcn/components/button.slint";
+import {
+    Card,
+    CardVariant,
+    CardPadding,
+} from "../slintcn/components/card.slint";
+import { Input } from "../slintcn/components/input.slint";
+
+component GroupCycler inherits Rectangle {
+    in-out property <int> group: 0;
+    callback changed(int);
+    height: Theme.row-height;
+    background: ta.pressed ? RowColors.pressed : RowColors.normal;
+
+    ta := TouchArea {
+        clicked => {
+            root.group = Math.mod(root.group + 1, 5);
+            root.changed(root.group);
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.padding-screen;
+        padding-right: Theme.padding-screen;
+        alignment: center;
+        spacing: Theme.spacing-default;
+
+        Text {
+            text: @tr("Quick-switch group");
+            color: Theme.text-primary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: root.group == 0 ? @tr("None") : "\{root.group}";
+            color: Theme.text-secondary;
+            font-size: Theme.font-size-body;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: "›";
+            color: Theme.text-disabled;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component SceneEditPage inherits Rectangle {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    in-out property <string> scene-name: "";
+    in-out property <int> quick-group: 0;
+
+    forward-focus: scope;
+    scope := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                PanelBridge.pop();
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            PanelHeader {
+                title: @tr("Edit Scene");
+                close-clicked => {
+                    PanelBridge.pop();
+                }
+            }
+
+            Flickable {
+                vertical-stretch: 1;
+                viewport-height: body.preferred-height;
+                body := VerticalLayout {
+                    padding: Theme.padding-screen;
+                    spacing: Theme.spacing-loose;
+                    alignment: start;
+
+                    Text {
+                        text: @tr("NAME");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Rectangle {
+                        height: 56px;
+                        background: RowColors.normal;
+                        border-radius: Theme.radius-card;
+                        VerticalLayout {
+                            padding: Theme.padding-screen;
+                            Input {
+                                text <=> root.scene-name;
+                                placeholder: @tr("Scene name");
+                                edited(v) => {
+                                    Bridge.rename-scene(Bridge.editing-scene-id, v);
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("SWITCHING");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        GroupCycler {
+                            group <=> root.quick-group;
+                            changed(g) => {
+                                Bridge.set-scene-quick-group(Bridge.editing-scene-id, g);
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: @tr("WIDGETS");
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-size-label;
+                        font-weight: 600;
+                    }
+
+                    Card {
+                        variant: CardVariant.solid;
+                        card-padding: CardPadding.none;
+                        clip: true;
+                        VerticalLayout {
+                            spacing: 1px;
+                            for p[idx] in Bridge.editing-scene-widgets: Rectangle {
+                                height: Theme.row-height;
+                                background: RowColors.normal;
+                                HorizontalLayout {
+                                    padding-left: Theme.padding-screen;
+                                    padding-right: Theme.padding-screen;
+                                    spacing: Theme.spacing-default;
+                                    alignment: center;
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        horizontal-stretch: 1;
+                                        Text {
+                                            text: p.name;
+                                            color: Theme.text-primary;
+                                            font-size: Theme.font-size-body;
+                                        }
+
+                                        Text {
+                                            text: p.widget-type;
+                                            color: Theme.text-disabled;
+                                            font-size: Theme.font-size-label;
+                                        }
+                                    }
+
+                                    Button {
+                                        text: @tr("Layout");
+                                        variant: ButtonVariant.outline;
+                                        size: ButtonSize.sm;
+                                        clicked => {
+                                            Bridge.editing-widget-id = p.widget-id;
+                                            Bridge.layout-x = p.x;
+                                            Bridge.layout-y = p.y;
+                                            Bridge.layout-width = p.width;
+                                            Bridge.layout-height = p.height;
+                                            Bridge.layout-opacity = p.opacity;
+                                            PanelBridge.push(Panel.scene-widget-layout);
+                                        }
+                                    }
+
+                                    Switch {
+                                        checked: p.enabled;
+                                        toggled(on) => {
+                                            Bridge.set-placement-enabled(Bridge.editing-scene-id, p.widget-id, on);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        text: @tr("Add Widget");
+                        variant: ButtonVariant.default;
+                        size: ButtonSize.lg;
+                        clicked => {
+                            PanelBridge.push(Panel.widget-wizard);
+                        }
+                    }
+
+                    Button {
+                        text: @tr("Delete Scene");
+                        variant: ButtonVariant.destructive;
+                        size: ButtonSize.lg;
+                        clicked => {
+                            Bridge.remove-scene(Bridge.editing-scene-id);
+                            PanelBridge.pop();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

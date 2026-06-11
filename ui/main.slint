@@ -123,6 +123,8 @@ import {
 import {
     ProtocolSrtSettingsPage,
 }      from "pages/protocol_srt_settings_page.slint";
+import { SceneListPage } from "pages/scene_list_page.slint";
+import { SceneEditPage } from "pages/scene_edit_page.slint";
 import { Theme } from "theme.slint";
 import { CastControlBar } from "components/control_bar.slint";
 import { InfoBanner } from "components/info_banner.slint";
@@ -251,6 +253,8 @@ export component MainWindow inherits Window {
             if PanelBridge.active == Panel.rtmp-wizard:          RtmpStreamWizardPage { }
             if PanelBridge.active == Panel.protocol-rtmp-settings: ProtocolRtmpSettingsPage { }
             if PanelBridge.active == Panel.protocol-srt-settings:  ProtocolSrtSettingsPage { }
+            if PanelBridge.active == Panel.scene-list:            SceneListPage { }
+            if PanelBridge.active == Panel.scene-edit:            SceneEditPage { }
         }
 
         // ── Stream status overlays (top-left + top-right) ────────────────────────
