@@ -384,6 +384,17 @@ impl NodeManager {
         self.media_bridges.clear();
     }
 
+    /// Updates the rotation on the first active CameraSourceNode. Equivalent to
+    /// Moblin's `updateOrientation()` triggered by `orientationDidChange`.
+    pub fn update_camera_rotation(&mut self, rotation_deg: u32) {
+        for record in self.nodes.values_mut() {
+            if let NodeRecord::CameraSource(node) = record {
+                node.update_rotation(rotation_deg);
+                return;
+            }
+        }
+    }
+
     pub fn dispatch(&mut self, command: Command) -> CommandResult {
         if !self.started {
             self.started = true;
@@ -417,6 +428,7 @@ impl NodeManager {
                 mirror,
                 stabilization,
                 zoom,
+                rotation_deg,
             } => (
                 self.create_camera_source(
                     id,
@@ -427,6 +439,7 @@ impl NodeManager {
                     mirror,
                     stabilization,
                     zoom,
+                    rotation_deg.unwrap_or(0),
                 ),
                 true,
             ),
@@ -591,6 +604,7 @@ impl NodeManager {
         mirror: bool,
         stabilization: bool,
         zoom: f32,
+        rotation_deg: u32,
     ) -> CommandResult {
         if let Err(err) = self.ensure_unique_id(&id) {
             return CommandResult::Error(err);
@@ -621,6 +635,7 @@ impl NodeManager {
                 mirror,
                 stabilization,
                 zoom,
+                rotation_deg,
             )),
         );
         CommandResult::Success
@@ -1107,6 +1122,36 @@ impl NodeManager {
             self.scene_registry.active_widget_links.remove(&link_id);
         }
 
+        // Crop is a source-side reframe (videocrop on the camera), not a
+        // compositor slot — apply it (or reset to 0) here so it takes effect
+        // whether or not a mixer exists. First enabled Crop widget wins.
+        let crop = scene
+            .widgets
+            .iter()
+            .filter(|placement| placement.enabled)
+            .find_map(|placement| {
+                match self
+                    .scene_registry
+                    .widgets
+                    .get(&placement.widget_id)
+                    .map(|widget| &widget.widget_type)
+                {
+                    Some(WidgetType::Crop {
+                        top,
+                        bottom,
+                        left,
+                        right,
+                    }) => Some((*top, *bottom, *left, *right)),
+                    _ => None,
+                }
+            })
+            .unwrap_or((0.0, 0.0, 0.0, 0.0));
+        for node in self.nodes.values() {
+            if let NodeRecord::CameraSource(cam) = node {
+                cam.set_crop(crop.0, crop.1, crop.2, crop.3);
+            }
+        }
+
         let mixer_id = self
             .nodes
             .iter()
@@ -1477,6 +1522,7 @@ mod tests {
                 mirror: true,
                 stabilization: false,
                 zoom: 2.5,
+                rotation_deg: Some(90),
             }),
             CommandResult::Success
         ));
@@ -1521,6 +1567,7 @@ mod tests {
                     mirror: false,
                     stabilization: true,
                     zoom: 1.0,
+                    rotation_deg: None,
                 }),
                 "requires non-zero width/height/fps",
             );
@@ -1539,6 +1586,7 @@ mod tests {
             mirror: false,
             stabilization: true,
             zoom: 1.0,
+            rotation_deg: None,
         };
 
         assert!(matches!(
@@ -1564,6 +1612,7 @@ mod tests {
                 mirror: false,
                 stabilization: true,
                 zoom: 1.0,
+                rotation_deg: None,
             }),
             CommandResult::Success
         ));

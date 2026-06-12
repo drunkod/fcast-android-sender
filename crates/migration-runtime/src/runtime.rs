@@ -349,6 +349,15 @@ pub fn handle_command(command: Command) -> CommandResult {
     GRAPH_NODE_MANAGER.lock().dispatch(command)
 }
 
+/// Updates the rotation of the first active camera source node.
+/// Called from the `CameraEvent::Started` handler in android_main when Kotlin
+/// reports the computed rotation (SENSOR_ORIENTATION + device physical rotation).
+pub fn update_camera_source_rotation(rotation_deg: u32) {
+    GRAPH_NODE_MANAGER
+        .lock()
+        .update_camera_rotation(rotation_deg);
+}
+
 pub fn handle_controller_message(message: ControllerMessage) -> ServerMessage {
     let result = handle_command(message.command);
     ServerMessage {

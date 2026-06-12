@@ -21,6 +21,7 @@ import org.fcast.android.sender.MainActivity
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Camera capture engine — mirrors [CaptureEngine] but sources frames from
@@ -44,6 +45,11 @@ open class CameraCaptureEngine {
     private val glHandler = Handler(glThread.looper)
     private val cameraThread = HandlerThread("CameraOps").also { it.start() }
     private val cameraHandler = Handler(cameraThread.looper)
+
+    // Orientation: sensor + device rotation tracking
+    private var orientationSensor: OrientationSensor? = null
+    // Current rotation in degrees reported to Rust (0/90/180/270).
+    private val currentRotationDeg = AtomicInteger(0)
 
     // Camera2 state
     private var cameraDevice: CameraDevice? = null
@@ -73,12 +79,15 @@ open class CameraCaptureEngine {
         config: CameraCaptureConfig,
         previewSurface: Surface? = null,
         captureFrames: Boolean = true,
-        onStarted: (width: Int, height: Int) -> Unit,
+        onStarted: (width: Int, height: Int, rotationDeg: Int) -> Unit,
         onFatalError: (reason: String) -> Unit,
     ) {
         check(!running) { "CameraCaptureEngine.start called twice" }
         running = true
         minIntervalNanos = config.minIntervalNanos
+
+        val sensor = OrientationSensor(context).also { orientationSensor = it }
+        sensor.start()
 
         val cm = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
@@ -102,6 +111,22 @@ open class CameraCaptureEngine {
         )
         val zoomRange = chars.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)
 
+        // Compute the rotation that the GStreamer videoflip element must apply so
+        // the encoded stream is upright. Mirrors Moblin's updateOrientation() in Model.swift.
+        //
+        // SENSOR_ORIENTATION: degrees the sensor image is rotated relative to the device's
+        // natural orientation (typically 90° for back cameras on most phones).
+        // deviceRotation: current physical rotation of the device (0/90/180/270).
+        val sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+        val isFront = chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
+        val deviceRotation = when (config.orientationMode) {
+            OrientationMode.PORTRAIT  -> 0
+            OrientationMode.LANDSCAPE -> 90
+            OrientationMode.AUTO      -> sensor.deviceRotation.value
+        }
+        val rotationDeg = calcVideoRotation(sensorOrientation, isFront, deviceRotation)
+        currentRotationDeg.set(rotationDeg)
+
         val stateCallback = object : CameraDevice.StateCallback() {
             override fun onOpened(camera: CameraDevice) {
                 cameraDevice = camera
@@ -109,7 +134,7 @@ open class CameraCaptureEngine {
                     try {
                         if (captureFrames) {
                             initGlAndCreateSession(
-                                camera, outDims, uvDims, config, fpsRange, zoomRange,
+                                camera, outDims, uvDims, config, rotationDeg, fpsRange, zoomRange,
                                 previewSurface, onStarted, onFatalError,
                             )
                         } else {
@@ -178,9 +203,10 @@ open class CameraCaptureEngine {
         camera: CameraDevice,
         outDims: CaptureEngine.Dimensions, uvDims: CaptureEngine.Dimensions,
         config: CameraCaptureConfig,
+        rotationDeg: Int,
         fpsRange: Range<Int>?, zoomRange: Range<Float>?,
         previewSurface: Surface?,
-        onStarted: (Int, Int) -> Unit, onFatalError: (String) -> Unit,
+        onStarted: (Int, Int, Int) -> Unit, onFatalError: (String) -> Unit,
     ) {
         // 1. Set up EGL + shaders — delegate to CaptureEngine helpers.
         //    Mirror is applied here via the VBO geometry (see setupGlForCapture).
@@ -231,7 +257,7 @@ open class CameraCaptureEngine {
                     try {
                         session.setRepeatingRequest(req.build(), null, cameraHandler)
                         shouldCapture.set(true)
-                        onStarted(outDims.width, outDims.height)
+                        onStarted(outDims.width, outDims.height, rotationDeg)
                     } catch (e: CameraAccessException) {
                         onFatalError("setRepeatingRequest failed: ${e.message}")
                     }
@@ -251,7 +277,7 @@ open class CameraCaptureEngine {
         config: CameraCaptureConfig,
         fpsRange: Range<Int>?, zoomRange: Range<Float>?,
         previewSurface: Surface?,
-        onStarted: (Int, Int) -> Unit, onFatalError: (String) -> Unit,
+        onStarted: (Int, Int, Int) -> Unit, onFatalError: (String) -> Unit,
     ) {
         val preview = previewSurface?.takeIf { it.isValid }
             ?: run {
@@ -283,7 +309,7 @@ open class CameraCaptureEngine {
                     }
                     try {
                         session.setRepeatingRequest(req.build(), null, cameraHandler)
-                        onStarted(outDims.width, outDims.height)
+                        onStarted(outDims.width, outDims.height, 0)
                     } catch (e: CameraAccessException) {
                         onFatalError("setRepeatingRequest failed: ${e.message}")
                     }
@@ -355,7 +381,21 @@ open class CameraCaptureEngine {
         )
     }
 
+    /**
+     * Computes the rotation (degrees) the GStreamer videoflip element must apply so
+     * the encoded frame is upright. Equivalent to Moblin's AVCaptureVideoOrientation logic.
+     *
+     * @param sensorOrientation SENSOR_ORIENTATION from CameraCharacteristics (degrees)
+     * @param isFront           true for front-facing camera (mirror flips rotation axis)
+     * @param deviceRotation    current physical device rotation: 0/90/180/270
+     */
+    private fun calcVideoRotation(sensorOrientation: Int, isFront: Boolean, deviceRotation: Int): Int =
+        if (isFront) (sensorOrientation + deviceRotation) % 360
+        else         (sensorOrientation - deviceRotation + 360) % 360
+
     open fun shutdown() {
+        orientationSensor?.stop()
+        orientationSensor = null
         if (!running) return
         running = false
         shouldCapture.set(false)

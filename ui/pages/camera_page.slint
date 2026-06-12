@@ -29,19 +29,20 @@ import { PanelHeader } from "../components/panel_chrome.slint";
 // (Phase 27 utils backlog).
 component PresetChip inherits Rectangle {
     in property <string> label;
-    in property <bool>   active: false;
+    in property <bool> active: false;
     callback clicked();
 
     height: 32px;
     width: max(48px, t.preferred-width + 16px);
     border-radius: 16px;
-    background: root.active
-        ? Theme.accent-active
-        : (ta.pressed ? Theme.surface-card.brighter(20%) : Theme.surface-card);
+    background: root.active ? Theme.accent-active : (ta.pressed ? Theme.surface-card.brighter(20%) : Theme.surface-card);
 
     ta := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => {
+            root.clicked();
+        }
     }
+
     t := Text {
         text: root.label;
         color: Theme.text-primary;
@@ -59,122 +60,138 @@ export component CameraPage inherits Rectangle {
     forward-focus: panel-scope;
     panel-scope := FocusScope {
         key-pressed(event) => {
-            if event.text == Key.Escape { PanelBridge.pop(); return accept; }
+            if event.text == Key.Escape {
+                PanelBridge.pop();
+                return accept;
+            }
             return reject;
         }
 
-    VerticalLayout {
+        VerticalLayout {
         // ── Header ──────────────────────────────────────────────────────
         PanelHeader {
-            title: @tr("Camera");
-            close-clicked => { PanelBridge.pop(); }
-        }
+                title: @tr("Camera");
+                close-clicked => {
+                    PanelBridge.pop();
+                }
+            }
 
-        // ── Body (scrollable) ───────────────────────────────────────────
+            // ── Body (scrollable) ───────────────────────────────────────────
         ScrollArea {
-            content-height: content.preferred-height;
-            content := VerticalLayout {
-                alignment: start;
-                spacing: Theme.spacing-default;
-                padding: Theme.padding-screen;
+                content-height: content.preferred-height;
+                content := VerticalLayout {
+                    alignment: start;
+                    spacing: Theme.spacing-default;
+                    padding: Theme.padding-screen;
 
-                // ── Section: SOURCE ─────────────────────────────────────
+                    // ── Section: SOURCE ─────────────────────────────────────
                 SettingsSection {
-                    title: @tr("SOURCE");
-                    SettingsValueRow {
-                        title: @tr("Camera");
-                        value: [@tr("Front"), @tr("Back"), @tr("External")][Math.clamp(Bridge.camera-idx, 0, 2)];
-                        clicked => {
-                            Bridge.camera-idx = Math.mod(Bridge.camera-idx + 1, 3);
-                            Bridge.save-cam-rtmp-config();
-                            Bridge.start-camera-rtmp-preview();
+                        title: @tr("SOURCE");
+                        SettingsValueRow {
+                            title: @tr("Camera");
+                            value: [@tr("Front"), @tr("Back"), @tr("External")][Math.clamp(Bridge.camera-idx, 0, 2)];
+                            clicked => {
+                                Bridge.camera-idx = Math.mod(Bridge.camera-idx + 1, 3);
+                                Bridge.save-cam-rtmp-config();
+                                Bridge.start-camera-rtmp-preview();
+                            }
                         }
-                    }
-                    SettingsValueRow {
-                        title: @tr("Resolution");
-                        value: ["480p", "720p", "1080p", "4K"][Math.clamp(Bridge.resolution-idx, 0, 3)];
-                        clicked => {
-                            Bridge.resolution-idx = Math.mod(Bridge.resolution-idx + 1, 4);
-                            Bridge.save-cam-rtmp-config();
-                            Bridge.start-camera-rtmp-preview();
-                        }
-                    }
-                    SettingsValueRow {
-                        title: @tr("Framerate");
-                        value: ["24 fps", "30 fps", "60 fps"][Math.clamp(Bridge.framerate-idx, 0, 2)];
-                        clicked => {
-                            Bridge.framerate-idx = Math.mod(Bridge.framerate-idx + 1, 3);
-                            Bridge.save-cam-rtmp-config();
-                            Bridge.start-camera-rtmp-preview();
-                        }
-                    }
-                }
 
-                // ── Section: IMAGE ──────────────────────────────────────
+                        SettingsValueRow {
+                            title: @tr("Resolution");
+                            value: ["480p", "720p", "1080p", "4K"][Math.clamp(Bridge.resolution-idx, 0, 3)];
+                            clicked => {
+                                Bridge.resolution-idx = Math.mod(Bridge.resolution-idx + 1, 4);
+                                Bridge.save-cam-rtmp-config();
+                                Bridge.start-camera-rtmp-preview();
+                            }
+                        }
+
+                        SettingsValueRow {
+                            title: @tr("Framerate");
+                            value: ["24 fps", "30 fps", "60 fps"][Math.clamp(Bridge.framerate-idx, 0, 2)];
+                            clicked => {
+                                Bridge.framerate-idx = Math.mod(Bridge.framerate-idx + 1, 3);
+                                Bridge.save-cam-rtmp-config();
+                                Bridge.start-camera-rtmp-preview();
+                            }
+                        }
+
+                        SettingsValueRow {
+                            title: @tr("Orientation");
+                            value: [@tr("Portrait"), @tr("Landscape"), @tr("Auto")][Math.clamp(Bridge.camera-orientation-mode-idx, 0, 2)];
+                            clicked => {
+                                Bridge.camera-orientation-mode-idx = Math.mod(Bridge.camera-orientation-mode-idx + 1, 3);
+                                Bridge.save-cam-rtmp-config();
+                                Bridge.start-camera-rtmp-preview();
+                            }
+                        }
+                    }
+
+                    // ── Section: IMAGE ──────────────────────────────────────
                 SettingsSection {
-                    title: @tr("IMAGE");
-                    SettingsToggleRow {
-                        title: @tr("Mirror front camera");
-                        checked: Bridge.camera-mirror-front;
-                        toggled(checked) => { 
-                            Bridge.camera-mirror-front = checked; 
-                            Bridge.save-cam-rtmp-config();
-                            Bridge.start-camera-rtmp-preview();
+                        title: @tr("IMAGE");
+                        SettingsToggleRow {
+                            title: @tr("Mirror front camera");
+                            checked: Bridge.camera-mirror-front;
+                            toggled(checked) => {
+                                Bridge.camera-mirror-front = checked;
+                                Bridge.save-cam-rtmp-config();
+                                Bridge.start-camera-rtmp-preview();
+                            }
                         }
-                    }
-                    SettingsToggleRow {
-                        title: @tr("Video stabilization");
-                        checked: Bridge.camera-stabilization;
-                        toggled(checked) => { 
-                            Bridge.camera-stabilization = checked; 
-                            Bridge.save-cam-rtmp-config();
-                            Bridge.start-camera-rtmp-preview();
-                        }
-                    }
-                    SettingsToggleRow {
-                        title: @tr("Tap to focus");
-                        checked: Bridge.camera-tap-to-focus;
-                        toggled(checked) => { 
-                            Bridge.camera-tap-to-focus = checked; 
-                            Bridge.save-cam-rtmp-config();
-                        }
-                    }
-                }
 
-                // ── Section: ZOOM ───────────────────────────────────────
+                        SettingsToggleRow {
+                            title: @tr("Video stabilization");
+                            checked: Bridge.camera-stabilization;
+                            toggled(checked) => {
+                                Bridge.camera-stabilization = checked;
+                                Bridge.save-cam-rtmp-config();
+                                Bridge.start-camera-rtmp-preview();
+                            }
+                        }
+
+                        SettingsToggleRow {
+                            title: @tr("Tap to focus");
+                            checked: Bridge.camera-tap-to-focus;
+                            toggled(checked) => {
+                                Bridge.camera-tap-to-focus = checked;
+                                Bridge.save-cam-rtmp-config();
+                            }
+                        }
+                    }
+
+                    // ── Section: ZOOM ───────────────────────────────────────
                 SettingsSection {
-                    title: @tr("ZOOM");
-                    SettingsSliderRow {
-                        title: @tr("Current zoom");
-                        unit: "×";
-                        minimum: 0.5;
-                        maximum: 10.0;
-                        show-fractional: true;
-                        value <=> Bridge.camera-zoom-level;
-                        changed => {
-                            Bridge.save-cam-rtmp-config();
-                            Bridge.start-camera-rtmp-preview();
+                        title: @tr("ZOOM");
+                        SettingsSliderRow {
+                            title: @tr("Current zoom");
+                            unit: "×";
+                            minimum: 0.5;
+                            maximum: 10.0;
+                            show-fractional: true;
+                            value <=> Bridge.camera-zoom-level;
+                            changed => {
+                                Bridge.save-cam-rtmp-config();
+                                Bridge.start-camera-rtmp-preview();
+                            }
                         }
-                    }
 
-                    Rectangle {
-                        height: 48px;
-                        HorizontalLayout {
-                            padding-left:  Theme.padding-screen;
-                            padding-right: Theme.padding-screen;
-                            spacing: 8px;
-                            alignment: start;
-                            for preset in [0.5, 1.0, 2.0, 5.0, 10.0]: PresetChip {
-                                label: preset == 0.5  ? "0.5×"
-                                     : preset == 1.0  ? "1×"
-                                     : preset == 2.0  ? "2×"
-                                     : preset == 5.0  ? "5×"
-                                     : "10×";
-                                active: Math.abs(Bridge.camera-zoom-level - preset) < 0.05;
-                                clicked => {
-                                    Bridge.camera-zoom-level = preset;
-                                    Bridge.save-cam-rtmp-config();
-                                    Bridge.start-camera-rtmp-preview();
+                        Rectangle {
+                            height: 48px;
+                            HorizontalLayout {
+                                padding-left: Theme.padding-screen;
+                                padding-right: Theme.padding-screen;
+                                spacing: 8px;
+                                alignment: start;
+                                for preset in [0.5, 1.0, 2.0, 5.0, 10.0]: PresetChip {
+                                    label: preset == 0.5 ? "0.5×" : preset == 1.0 ? "1×" : preset == 2.0 ? "2×" : preset == 5.0 ? "5×" : "10×";
+                                    active: Math.abs(Bridge.camera-zoom-level - preset) < 0.05;
+                                    clicked => {
+                                        Bridge.camera-zoom-level = preset;
+                                        Bridge.save-cam-rtmp-config();
+                                        Bridge.start-camera-rtmp-preview();
+                                    }
                                 }
                             }
                         }
@@ -182,6 +199,5 @@ export component CameraPage inherits Rectangle {
                 }
             }
         }
-    }
     }   // end FocusScope
 }

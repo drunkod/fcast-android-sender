@@ -10,9 +10,9 @@ use once_cell::sync::OnceCell;
 
 use crate::backend::registry::{BackendKind, BackendRegistry, InMemoryRegistry};
 use crate::backend::MigrationBackend;
-use crate::secret::SecretStore;
 #[cfg(not(target_os = "android"))]
 use crate::secret::InMemorySecretStore;
+use crate::secret::SecretStore;
 /// The composition root for the Rust crate. Constructed once during
 /// android_main / JNI bootstrap.
 pub struct App {

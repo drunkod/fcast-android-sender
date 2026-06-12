@@ -183,8 +183,15 @@ pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeCameraCapture
     class: jni::objects::JClass<'local>,
     width: jni::sys::jint,
     height: jni::sys::jint,
+    rotation_deg: jni::sys::jint,
 ) {
-    crate::jni_bridge::main_activity::native_camera_capture_started(env, class, width, height)
+    crate::jni_bridge::main_activity::native_camera_capture_started(
+        env,
+        class,
+        width,
+        height,
+        rotation_deg,
+    )
 }
 
 #[cfg(target_os = "android")]

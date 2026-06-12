@@ -73,6 +73,7 @@ GSTREAMER_PLUGINS := \
     x264 \
     voaacenc \
     isomp4 \
+    mpegtsmux \
     androidmedia \
     videoparsersbad
 

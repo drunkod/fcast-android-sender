@@ -22,7 +22,7 @@ interface CameraCaptureCoordinator {
 
     interface Callbacks {
         @MainThread fun onCameraPermissionNeeded()
-        @MainThread fun onCameraCaptureStarted(width: Int, height: Int)
+        @MainThread fun onCameraCaptureStarted(width: Int, height: Int, rotationDeg: Int)
         @MainThread fun onCameraCaptureStopped()
         @MainThread fun onCameraCaptureFailed(reason: String)
     }
@@ -133,11 +133,11 @@ class RealCameraCaptureCoordinator(
                 config = cfg,
                 previewSurface = previewSurface,
                 captureFrames = nextMode == Mode.CAPTURE,
-                onStarted = { w, h ->
+                onStarted = { w, h, rotDeg ->
                     if (nextMode == Mode.CAPTURE) {
-                        mainHandler.post { callbacks.onCameraCaptureStarted(w, h) }
+                        mainHandler.post { callbacks.onCameraCaptureStarted(w, h, rotDeg) }
                     } else {
-                        Log.d(TAG, "camera preview started ${w}x$h")
+                        Log.d(TAG, "camera preview started ${w}x$h rot=${rotDeg}°")
                     }
                 },
                 onFatalError = { reason ->

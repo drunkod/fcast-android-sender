@@ -220,6 +220,11 @@ pub enum Command {
         stabilization: bool,
         #[serde(default = "default_camera_zoom")]
         zoom: f32,
+        /// Clockwise rotation in degrees (0/90/180/270) for GStreamer videoflip.
+        /// Absent/null means rotation is unknown at creation time and will be
+        /// applied dynamically via nativeCameraCaptureStarted.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rotation_deg: Option<u32>,
     },
     CreateDestination {
         id: String,
@@ -710,7 +715,7 @@ mod tests {
             },
         };
         let json = serde_json::to_string(&w).unwrap();
-        assert!(json.contains(r#"\"type\":\"text\""#));
+        assert!(json.contains(r#""type":"text""#));
         assert_eq!(serde_json::from_str::<Widget>(&json).unwrap(), w);
     }
 
@@ -858,6 +863,7 @@ mod tests {
                 mirror,
                 stabilization,
                 zoom,
+                rotation_deg,
             } => {
                 assert_eq!(id, "cam-1");
                 assert_eq!(camera_idx, 2);
@@ -867,6 +873,7 @@ mod tests {
                 assert!(mirror);
                 assert!(!stabilization);
                 assert_eq!(zoom, 2.5);
+                assert_eq!(rotation_deg, None);
             }
             other => panic!("expected CreateCameraSource, got {other:?}"),
         }
@@ -887,6 +894,7 @@ mod tests {
                 mirror,
                 stabilization,
                 zoom,
+                rotation_deg,
             } => {
                 assert_eq!(id, "cam-1");
                 assert_eq!(camera_idx, 1);
@@ -896,6 +904,7 @@ mod tests {
                 assert!(!mirror);
                 assert!(stabilization);
                 assert_eq!(zoom, 1.0);
+                assert_eq!(rotation_deg, None);
             }
             other => panic!("expected CreateCameraSource, got {other:?}"),
         }
@@ -912,6 +921,7 @@ mod tests {
             mirror: true,
             stabilization: false,
             zoom: 1.5,
+            rotation_deg: Some(90),
         };
 
         let json = serde_json::to_string(&cmd).unwrap();
@@ -927,6 +937,7 @@ mod tests {
                 mirror: true,
                 stabilization: false,
                 zoom,
+                rotation_deg: Some(90),
             } if id == "cam-1" && (zoom - 1.5).abs() < f32::EPSILON
         ));
     }

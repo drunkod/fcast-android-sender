@@ -371,6 +371,8 @@ export global Bridge {
     in-out property <int> camera-idx: 1;
     in-out property <int> resolution-idx: 2;
     in-out property <int> framerate-idx: 1;
+    // 0 = Portrait, 1 = Landscape, 2 = Auto. Mirrors Moblin's stream-level Portrait setting.
+    in-out property <int> camera-orientation-mode-idx: 1;
     in-out property <bool> camera-mirror-front: true;
     in-out property <bool> camera-stabilization: true;
     in-out property <bool> camera-tap-to-focus: true;

@@ -1,5 +1,15 @@
 package org.fcast.android.sender.capture
 
+/** Desired stream orientation, mirroring Moblin's `stream.portrait: Bool` but more expressive. */
+enum class OrientationMode {
+    /** Lock stream to portrait (9:16). Screen also locks to portrait. */
+    PORTRAIT,
+    /** Lock stream to landscape (16:9). Screen also locks to landscape. */
+    LANDSCAPE,
+    /** Follow device physical orientation. Screen rotation is unrestricted. */
+    AUTO,
+}
+
 /**
  * Camera-specific capture parameters supplied by the Slint UI.
  *
@@ -19,6 +29,7 @@ data class CameraCaptureConfig(
     val mirror: Boolean = false,
     val stabilization: Boolean = true,
     val zoom: Float = 1.0f,
+    val orientationMode: OrientationMode = OrientationMode.PORTRAIT,
 ) {
     init {
         require(cameraIdx in 0..2)             { "cameraIdx must be 0..2, got $cameraIdx" }

@@ -111,6 +111,30 @@ export component SceneListPage inherits Rectangle {
                                         }
                                     }
 
+                                    // Reorder controls (display order only).
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 2px;
+                                        Button {
+                                            text: "▲";
+                                            variant: ButtonVariant.ghost;
+                                            size: ButtonSize.icon-sm;
+                                            disabled: idx <= 0;
+                                            clicked => {
+                                                Bridge.reorder-scenes(idx, idx - 1);
+                                            }
+                                        }
+                                        Button {
+                                            text: "▼";
+                                            variant: ButtonVariant.ghost;
+                                            size: ButtonSize.icon-sm;
+                                            disabled: idx >= Bridge.scenes.length - 1;
+                                            clicked => {
+                                                Bridge.reorder-scenes(idx, idx + 1);
+                                            }
+                                        }
+                                    }
+
                                     Switch {
                                         checked: scene.enabled;
                                         toggled(on) => {

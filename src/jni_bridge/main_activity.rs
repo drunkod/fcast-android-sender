@@ -24,10 +24,18 @@ use slint::ComponentHandle;
 /// `crate::GLOB_CAMERA_EVENT_CHAN`.
 #[derive(Debug, Clone)]
 pub enum CameraEvent {
-    Started { width: u32, height: u32 },
+    Started {
+        width: u32,
+        height: u32,
+        rotation_deg: u32,
+    },
     Stopped,
-    Failed { reason: String },
-    PermissionResult { granted: bool },
+    Failed {
+        reason: String,
+    },
+    PermissionResult {
+        granted: bool,
+    },
 }
 
 #[cfg(target_os = "android")]
@@ -91,11 +99,16 @@ pub fn native_camera_capture_started<'local>(
     _class: JClass<'local>,
     width: jni::sys::jint,
     height: jni::sys::jint,
+    rotation_deg: jni::sys::jint,
 ) {
-    debug!("camera capture started {}x{}", width, height);
+    debug!(
+        "camera capture started {}x{} rot={}°",
+        width, height, rotation_deg
+    );
     if let Err(e) = crate::GLOB_CAMERA_EVENT_CHAN.0.send(CameraEvent::Started {
         width: width as u32,
         height: height as u32,
+        rotation_deg: rotation_deg.max(0) as u32,
     }) {
         error!(?e, "send CameraEvent::Started");
     }

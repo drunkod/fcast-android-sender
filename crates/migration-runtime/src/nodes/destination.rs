@@ -46,8 +46,12 @@ pub struct LiveDestinationPipeline {
 
 #[derive(Debug)]
 struct VideoEncoderChain {
-    encoder: gst::Element,
+    /// Optional capsfilter placed BEFORE the encoder (e.g. NV12 format for amcvidenc).
     capsfilter: Option<gst::Element>,
+    encoder: gst::Element,
+    /// Optional capsfilter placed AFTER the encoder to constrain H.264 level/profile.
+    /// Needed for amcvidenc which defaults to level 1 unless downstream caps pressure it.
+    output_capsfilter: Option<gst::Element>,
 }
 
 impl DestinationPipelineProfile {
@@ -396,6 +400,17 @@ impl DestinationNode {
         if venc.has_property("i-frame-interval") {
             venc.set_property("i-frame-interval", 1u32);
         }
+        // x264enc: use superfast preset for low-latency live streaming and force level 4.1
+        // so the SPS correctly reflects 1920×1080 capability (level 1 is 176×144 only).
+        if venc.has_property("speed-preset") {
+            venc.set_property_from_str("speed-preset", "superfast");
+        }
+        if venc.has_property("level-id") {
+            venc.set_property("level-id", 41u32);
+        }
+        if venc.has_property("byte-stream") {
+            venc.set_property("byte-stream", true);
+        }
     }
 
     #[cfg(target_os = "android")]
@@ -488,6 +503,21 @@ impl DestinationNode {
                         .field("format", "NV12")
                         .build();
                     capsfilter.set_property("caps", &caps);
+
+                    // Encoder-output capsfilter — kept as a plain `video/x-h264`
+                    // passthrough. Do NOT pin `profile`/`level` here: amcvidenc
+                    // commonly reports `level=1` in its output caps even while
+                    // encoding 1080p (the actual resolution is driven by the
+                    // encoder INPUT caps, not this filter). A fixed level/profile
+                    // fails to intersect the real output → not-negotiated → the
+                    // whole pipeline errors out before any frame is sent.
+                    let output_capsfilter = Self::make_element(
+                        "capsfilter",
+                        Some(&format!("destination-venc-out-caps-{id}")),
+                    )?;
+                    let h264_caps = gst::Caps::builder("video/x-h264").build();
+                    output_capsfilter.set_property("caps", &h264_caps);
+
                     Self::configure_video_encoder(&venc);
                     Self::configure_video_encoder_bitrate(&venc);
                     info!(
@@ -498,6 +528,7 @@ impl DestinationNode {
                     return Ok(VideoEncoderChain {
                         encoder: venc,
                         capsfilter: Some(capsfilter),
+                        output_capsfilter: Some(output_capsfilter),
                     });
                 }
                 Err(err) => {
@@ -515,6 +546,7 @@ impl DestinationNode {
             attempted_names.push(encoder.to_string());
             if let Ok(venc) = Self::make_element(encoder, Some(&encoder_name)) {
                 Self::configure_video_encoder(&venc);
+                Self::configure_video_encoder_bitrate(&venc);
                 warn!(
                     destination_id = %id,
                     encoder = %encoder,
@@ -523,6 +555,7 @@ impl DestinationNode {
                 return Ok(VideoEncoderChain {
                     encoder: venc,
                     capsfilter: None,
+                    output_capsfilter: None,
                 });
             }
         }
@@ -558,6 +591,7 @@ impl DestinationNode {
                 return Ok(VideoEncoderChain {
                     encoder: venc,
                     capsfilter: None,
+                    output_capsfilter: None,
                 });
             }
         }
@@ -580,6 +614,11 @@ impl DestinationNode {
         pipeline
             .add(&chain.encoder)
             .map_err(|err| format!("Failed to add video encoder to {purpose}: {err:?}"))?;
+        if let Some(output_cf) = chain.output_capsfilter.as_ref() {
+            pipeline.add(output_cf).map_err(|err| {
+                format!("Failed to add video output capsfilter to {purpose}: {err:?}")
+            })?;
+        }
         Ok(())
     }
 
@@ -589,12 +628,18 @@ impl DestinationNode {
         downstream: &gst::Element,
         purpose: &str,
     ) -> Result<(), String> {
-        if let Some(capsfilter) = chain.capsfilter.as_ref() {
-            gst::Element::link_many([upstream, capsfilter, &chain.encoder, downstream].as_slice())
-        } else {
-            gst::Element::link_many([upstream, &chain.encoder, downstream].as_slice())
+        // Build the element chain dynamically based on which optional elements are present.
+        let mut elems: Vec<&gst::Element> = vec![upstream];
+        if let Some(cf) = chain.capsfilter.as_ref() {
+            elems.push(cf);
         }
-        .map_err(|err| format!("Failed to link {purpose}: {err:?}"))
+        elems.push(&chain.encoder);
+        if let Some(ocf) = chain.output_capsfilter.as_ref() {
+            elems.push(ocf);
+        }
+        elems.push(downstream);
+        gst::Element::link_many(elems.as_slice())
+            .map_err(|err| format!("Failed to link {purpose}: {err:?}"))
     }
 
     fn build_live_pipeline(
@@ -837,6 +882,11 @@ impl DestinationNode {
                         format!("Failed to add h264parse to udp pipeline: {err:?}")
                     })?;
 
+                    // Repeat SPS/PPS in-band so late-joining UDP receivers decode.
+                    if vparse.has_property("config-interval") {
+                        vparse.set_property("config-interval", 1i32);
+                    }
+
                     gst::Element::link_many(
                         [appsrc.upcast_ref::<gst::Element>(), &vconv].as_slice(),
                     )
@@ -888,11 +938,19 @@ impl DestinationNode {
                 pbkeylen,
             } => {
                 let mux = Self::make_element("mpegtsmux", None)?;
+                // Decouple the muxer from the live srtsink. srtsink is a live sink
+                // and warns "pipeline construction is invalid, please add queues"
+                // without an upstream buffer; the queue absorbs network back-pressure
+                // so it doesn't stall the encoder.
+                let sink_queue = Self::make_element("queue", None)?;
                 let sink = Self::make_element("srtsink", None)?;
 
                 pipeline
                     .add(&mux)
                     .map_err(|err| format!("Failed to add mpegtsmux to srt pipeline: {err:?}"))?;
+                pipeline
+                    .add(&sink_queue)
+                    .map_err(|err| format!("Failed to add srt sink queue: {err:?}"))?;
                 pipeline
                     .add(&sink)
                     .map_err(|err| format!("Failed to add srtsink to srt pipeline: {err:?}"))?;
@@ -925,6 +983,14 @@ impl DestinationNode {
                     pipeline.add(&vparse).map_err(|err| {
                         format!("Failed to add h264parse to srt pipeline: {err:?}")
                     })?;
+
+                    // Repeat SPS/PPS in-band (before every IDR) so a receiver that
+                    // joins mid-stream can decode without waiting for a fresh
+                    // stream start. Without this, a late SRT listener connects but
+                    // shows no video. Mirrors the RTMP arm.
+                    if vparse.has_property("config-interval") {
+                        vparse.set_property("config-interval", 1i32);
+                    }
 
                     gst::Element::link_many(
                         [appsrc.upcast_ref::<gst::Element>(), &vconv].as_slice(),
@@ -970,8 +1036,9 @@ impl DestinationNode {
                     .map_err(|err| format!("Failed to link srt audio chain: {err:?}"))?;
                 }
 
-                mux.link(&sink)
-                    .map_err(|err| format!("Failed to link mpegtsmux to srtsink: {err:?}"))?;
+                gst::Element::link_many([&mux, &sink_queue, &sink].as_slice()).map_err(|err| {
+                    format!("Failed to link mpegtsmux → queue → srtsink: {err:?}")
+                })?;
             }
             DestinationFamily::Rist {
                 address,
@@ -1010,6 +1077,11 @@ impl DestinationNode {
                     pipeline.add(&vparse).map_err(|err| {
                         format!("Failed to add h264parse to rist pipeline: {err:?}")
                     })?;
+
+                    // Repeat SPS/PPS in-band so late-joining RIST receivers decode.
+                    if vparse.has_property("config-interval") {
+                        vparse.set_property("config-interval", 1i32);
+                    }
 
                     gst::Element::link_many(
                         [appsrc.upcast_ref::<gst::Element>(), &vconv].as_slice(),

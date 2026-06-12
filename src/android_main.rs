@@ -94,8 +94,30 @@ fn android_main(app: PlatformApp) {
     #[derive(Clone, Default)]
     struct SceneRegistryState {
         scenes: BTreeMap<String, Scene>,
+        // User-facing display order (the BTreeMap above is keyed by id, so it
+        // can't preserve order on its own). Tolerant of drift — see
+        // `ordered_scene_ids`.
+        scene_order: Vec<String>,
         widgets: BTreeMap<String, Widget>,
         current_scene_id: Option<String>,
+    }
+
+    /// Scene ids in user display order. Drops stale ids and appends any scene
+    /// missing from `scene_order` (in stable BTreeMap order), so the order list
+    /// never needs to be perfectly in sync with the map.
+    fn ordered_scene_ids(reg: &SceneRegistryState) -> Vec<String> {
+        let mut ids: Vec<String> = reg
+            .scene_order
+            .iter()
+            .filter(|id| reg.scenes.contains_key(*id))
+            .cloned()
+            .collect();
+        for id in reg.scenes.keys() {
+            if !ids.contains(id) {
+                ids.push(id.clone());
+            }
+        }
+        ids
     }
 
     fn default_main_scene() -> Scene {
@@ -165,9 +187,9 @@ fn android_main(app: PlatformApp) {
 
     fn push_scene_models(ui_handle: slint::Weak<MainWindow>, reg: &SceneRegistryState) {
         let reg = reg.clone();
-        let scenes = reg
-            .scenes
-            .values()
+        let scenes = ordered_scene_ids(&reg)
+            .iter()
+            .filter_map(|id| reg.scenes.get(id))
             .map(|scene| SceneItem {
                 id: scene.id.clone().into(),
                 name: scene.name.clone().into(),
@@ -208,7 +230,10 @@ fn android_main(app: PlatformApp) {
     }
 
     fn persist_scene_registry(reg: &SceneRegistryState) {
-        let scenes = reg.scenes.values().cloned().collect::<Vec<_>>();
+        let scenes = ordered_scene_ids(reg)
+            .iter()
+            .filter_map(|id| reg.scenes.get(id).cloned())
+            .collect::<Vec<_>>();
         let widgets = reg.widgets.values().cloned().collect::<Vec<_>>();
         let current_scene_id = reg.current_scene_id.clone();
         if let Err(err) = crate::config::update(move |cfg| {
@@ -615,6 +640,10 @@ fn android_main(app: PlatformApp) {
         std::env::temp_dir()
     });
     crate::config::init(files_dir.clone());
+    // Debug frame dumps: expose the dump dir to the migration-runtime crate too.
+    // Toggle at runtime by creating/removing the marker file <files_dir>/dump/on
+    // (see scripts below). Frames land in <files_dir>/dump/.
+    std::env::set_var("FCAST_DUMP_DIR", files_dir.join("dump"));
     let backend_lifecycle =
         std::sync::Arc::new(backend::lifecycle::BackendLifecycle::new(files_dir));
     backend_lifecycle.register(&ui);
@@ -628,6 +657,8 @@ fn android_main(app: PlatformApp) {
             .scenes
             .insert(scene.id.clone(), scene);
     }
+    // Preserve the saved display order (config `scenes` is an ordered Vec).
+    initial_scene_registry.scene_order = backend_cfg.scenes.iter().map(|s| s.id.clone()).collect();
     for widget in backend_cfg.widgets.clone() {
         initial_scene_registry
             .widgets
@@ -639,6 +670,7 @@ fn android_main(app: PlatformApp) {
         initial_scene_registry
             .scenes
             .insert(scene.id.clone(), scene.clone());
+        initial_scene_registry.scene_order = vec![scene.id.clone()];
         initial_scene_registry.current_scene_id = Some(scene.id);
         repaired_scene_registry = true;
     } else {
@@ -677,6 +709,7 @@ fn android_main(app: PlatformApp) {
     b.set_camera_idx(global_cam_cfg.camera_idx);
     b.set_resolution_idx(global_cam_cfg.resolution_idx);
     b.set_framerate_idx(global_cam_cfg.framerate_idx);
+    b.set_camera_orientation_mode_idx(global_cam_cfg.orientation_mode_idx.clamp(0, 2));
     b.set_camera_mirror_front(global_cam_cfg.mirror_front);
     b.set_camera_stabilization(global_cam_cfg.stabilization);
     b.set_camera_zoom_level(global_cam_cfg.zoom_level.max(0.5));
@@ -725,6 +758,7 @@ fn android_main(app: PlatformApp) {
                     reg.current_scene_id = Some(scene.id.clone());
                 }
                 reg.scenes.insert(scene.id.clone(), scene.clone());
+                reg.scene_order.push(scene.id.clone());
                 let snapshot = reg.clone();
                 persist_scene_registry(&snapshot);
                 snapshot
@@ -792,6 +826,7 @@ fn android_main(app: PlatformApp) {
                 if reg.scenes.remove(&scene_id).is_none() {
                     return;
                 }
+                reg.scene_order.retain(|id| id != &scene_id);
                 if reg.current_scene_id.as_deref() == Some(scene_id.as_str()) {
                     reg.current_scene_id = reg.scenes.keys().next().cloned();
                 } else if reg
@@ -815,6 +850,30 @@ fn android_main(app: PlatformApp) {
                     scene_id: next_scene_id,
                 });
             }
+            push_scene_models(ui_weak.clone(), &snapshot);
+        }
+    });
+
+    // Reordering is display/persistence-only — scenes are switched by id, not
+    // position, so no runtime command is needed.
+    ui.global::<Bridge>().on_reorder_scenes({
+        let scene_registry = scene_registry.clone();
+        let ui_weak = ui.as_weak();
+        move |from, to| {
+            let snapshot = {
+                let mut reg = scene_registry.lock();
+                // Canonicalize first so indices line up with what the UI rendered.
+                reg.scene_order = ordered_scene_ids(&reg);
+                let len = reg.scene_order.len() as i32;
+                if from < 0 || to < 0 || from >= len || to >= len || from == to {
+                    return;
+                }
+                let id = reg.scene_order.remove(from as usize);
+                reg.scene_order.insert(to as usize, id);
+                let snapshot = reg.clone();
+                persist_scene_registry(&snapshot);
+                snapshot
+            };
             push_scene_models(ui_weak.clone(), &snapshot);
         }
     });
@@ -1155,6 +1214,7 @@ fn android_main(app: PlatformApp) {
             let camera_idx = b.get_camera_idx();
             let resolution_idx = b.get_resolution_idx();
             let framerate_idx = b.get_framerate_idx();
+            let orientation_mode_idx = b.get_camera_orientation_mode_idx();
             let mirror_front = b.get_camera_mirror_front();
             let stabilization = b.get_camera_stabilization();
             let zoom_level = b.get_camera_zoom_level();
@@ -1168,6 +1228,7 @@ fn android_main(app: PlatformApp) {
                 cam.camera_idx = camera_idx;
                 cam.resolution_idx = resolution_idx;
                 cam.framerate_idx = framerate_idx;
+                cam.orientation_mode_idx = orientation_mode_idx;
                 cam.mirror_front = mirror_front;
                 cam.stabilization = stabilization;
                 cam.zoom_level = zoom_level;
@@ -2238,7 +2299,8 @@ fn android_main(app: PlatformApp) {
         // until it can write the first packet. Feeding camera data first
         // unblocks the state change so play() returns in <1s rather than after
         // the 30s gstpop timeout.
-        if let Err(e) = upcall_start_camera_capture(cam_idx, width, height, fps, mirror, stab, zoom)
+        if let Err(e) =
+            upcall_start_camera_capture(cam_idx, width, height, fps, mirror, stab, zoom, 1)
         {
             let _ = client
                 .call(
@@ -2502,6 +2564,7 @@ fn android_main(app: PlatformApp) {
                 b.get_camera_mirror_front(),
                 b.get_camera_stabilization(),
                 b.get_camera_zoom_level(),
+                b.get_camera_orientation_mode_idx(),
             ) {
                 warn!("startCameraPreview failed: {err}");
             }
@@ -2513,24 +2576,35 @@ fn android_main(app: PlatformApp) {
         move || {
             let ui = ui_weak.clone();
 
-            let (backend, url, key, cam_idx, res_idx, fps_idx, mirror, stab, zoom) =
-                match ui.upgrade() {
-                    Some(u) => {
-                        let b = u.global::<Bridge>();
-                        (
-                            b.get_media_backend(),
-                            b.get_cam_rtmp_url().to_string(),
-                            b.get_cam_rtmp_stream_key().to_string(),
-                            b.get_camera_idx(),
-                            b.get_resolution_idx(),
-                            b.get_framerate_idx(),
-                            b.get_camera_mirror_front(),
-                            b.get_camera_stabilization(),
-                            b.get_camera_zoom_level(),
-                        )
-                    }
-                    None => return,
-                };
+            let (
+                backend,
+                url,
+                key,
+                cam_idx,
+                res_idx,
+                fps_idx,
+                orientation_mode,
+                mirror,
+                stab,
+                zoom,
+            ) = match ui.upgrade() {
+                Some(u) => {
+                    let b = u.global::<Bridge>();
+                    (
+                        b.get_media_backend(),
+                        b.get_cam_rtmp_url().to_string(),
+                        b.get_cam_rtmp_stream_key().to_string(),
+                        b.get_camera_idx(),
+                        b.get_resolution_idx(),
+                        b.get_framerate_idx(),
+                        b.get_camera_orientation_mode_idx(),
+                        b.get_camera_mirror_front(),
+                        b.get_camera_stabilization(),
+                        b.get_camera_zoom_level(),
+                    )
+                }
+                None => return,
+            };
 
             clear_error(&ui);
             let _ = ui.upgrade_in_event_loop(|u| {
@@ -2581,6 +2655,7 @@ fn android_main(app: PlatformApp) {
                                 mirror,
                                 stabilization: stab,
                                 zoom,
+                                rotation_deg: None,
                             },
                             Command::CreateDestination {
                                 id: "cam-rtmp-dest".into(),
@@ -2624,6 +2699,7 @@ fn android_main(app: PlatformApp) {
                             mirror,
                             stab,
                             zoom,
+                            orientation_mode,
                         ) {
                             tear_down_migration();
                             return fail(&ui_clone, format!("startCameraCapture: {e}"));
@@ -2731,6 +2807,7 @@ fn android_main(app: PlatformApp) {
                 cam_idx,
                 res_idx,
                 fps_idx,
+                orientation_mode,
                 mirror,
                 stab,
                 zoom,
@@ -2747,6 +2824,7 @@ fn android_main(app: PlatformApp) {
                         b.get_camera_idx(),
                         b.get_resolution_idx(),
                         b.get_framerate_idx(),
+                        b.get_camera_orientation_mode_idx(),
                         b.get_camera_mirror_front(),
                         b.get_camera_stabilization(),
                         b.get_camera_zoom_level(),
@@ -2805,6 +2883,7 @@ fn android_main(app: PlatformApp) {
                         mirror,
                         stabilization: stab,
                         zoom,
+                        rotation_deg: None,
                     },
                     Command::CreateDestination {
                         id: "srt-dest".into(),
@@ -2853,6 +2932,7 @@ fn android_main(app: PlatformApp) {
                     mirror,
                     stab,
                     zoom,
+                    orientation_mode,
                 ) {
                     tear_down_srt();
                     return srt_fail(&ui_clone, format!("startCameraCapture: {e}"));
@@ -2886,8 +2966,13 @@ fn android_main(app: PlatformApp) {
     std::thread::spawn(move || loop {
         match crate::GLOB_CAMERA_EVENT_CHAN.1.recv() {
             Ok(event) => match event {
-                crate::jni_bridge::main_activity::CameraEvent::Started { width, height } => {
-                    tracing::info!("camera capture started {width}x{height}");
+                crate::jni_bridge::main_activity::CameraEvent::Started {
+                    width,
+                    height,
+                    rotation_deg,
+                } => {
+                    tracing::info!("camera capture started {width}x{height} rot={rotation_deg}°");
+                    migration_runtime::runtime::update_camera_source_rotation(rotation_deg);
                     let _ = cam_event_ui_weak.upgrade_in_event_loop(|u| {
                         let b = u.global::<Bridge>();
                         b.set_cam_rtmp_camera_permission(true);

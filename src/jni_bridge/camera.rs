@@ -12,13 +12,14 @@ pub fn upcall_start_camera_capture(
     mirror: bool,
     stabilization: bool,
     zoom: f32,
+    orientation_mode: i32,
 ) -> Result<(), String> {
     let ctx = crate::android_context().map_err(|e| e.to_string())?;
     let mut env = ctx.vm.attach_current_thread().map_err(|e| e.to_string())?;
     env.call_method(
         &ctx.activity,
         "startCameraCapture",
-        "(IIIIZZF)V",
+        "(IIIIZZFI)V",
         &[
             JValue::Int(camera_idx as i32),
             JValue::Int(w as i32),
@@ -27,6 +28,7 @@ pub fn upcall_start_camera_capture(
             JValue::Bool(u8::from(mirror)),
             JValue::Bool(u8::from(stabilization)),
             JValue::Float(zoom),
+            JValue::Int(orientation_mode),
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -42,6 +44,7 @@ pub fn upcall_start_camera_capture(
     _mirror: bool,
     _stabilization: bool,
     _zoom: f32,
+    _orientation_mode: i32,
 ) -> Result<(), String> {
     Ok(())
 }
@@ -69,13 +72,14 @@ pub fn upcall_start_camera_preview(
     mirror: bool,
     stabilization: bool,
     zoom: f32,
+    orientation_mode: i32,
 ) -> Result<(), String> {
     let ctx = crate::android_context().map_err(|e| e.to_string())?;
     let mut env = ctx.vm.attach_current_thread().map_err(|e| e.to_string())?;
     env.call_method(
         &ctx.activity,
         "startCameraPreview",
-        "(IIIIZZF)V",
+        "(IIIIZZFI)V",
         &[
             JValue::Int(camera_idx as i32),
             JValue::Int(w as i32),
@@ -84,6 +88,7 @@ pub fn upcall_start_camera_preview(
             JValue::Bool(u8::from(mirror)),
             JValue::Bool(u8::from(stabilization)),
             JValue::Float(zoom),
+            JValue::Int(orientation_mode),
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -99,6 +104,7 @@ pub fn upcall_start_camera_preview(
     _mirror: bool,
     _stabilization: bool,
     _zoom: f32,
+    _orientation_mode: i32,
 ) -> Result<(), String> {
     Ok(())
 }

@@ -24,6 +24,10 @@ fn default_srt_latency_ms() -> i32 {
     200
 }
 
+fn default_camera_orientation_mode_idx() -> i32 {
+    1
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct SrtDestinationConfig {
     pub url: String,
@@ -50,6 +54,8 @@ pub struct GlobalCameraConfig {
     pub camera_idx: i32,
     pub resolution_idx: i32,
     pub framerate_idx: i32,
+    #[serde(default = "default_camera_orientation_mode_idx")]
+    pub orientation_mode_idx: i32,
     pub mirror_front: bool,
     pub stabilization: bool,
     pub zoom_level: f32,
@@ -61,6 +67,7 @@ impl Default for GlobalCameraConfig {
             camera_idx: 1,
             resolution_idx: 2,
             framerate_idx: 1,
+            orientation_mode_idx: 1,
             mirror_front: false,
             stabilization: true,
             zoom_level: 1.0,

@@ -178,6 +178,12 @@ class CaptureEngine {
                 buf = ByteBuffer.allocateDirect(dims.width * dims.height)
             }
             buf.position(0)
+            // Pack rows tightly. The default GL_PACK_ALIGNMENT is 4, which pads
+            // each row up to a 4-byte boundary for this single-channel (GL_RED)
+            // readback when the width isn't a multiple of 4 — that row-skew shows
+            // up as a diagonal shear / coloured edge line. Force byte alignment so
+            // the buffer matches the tight width*height the native side expects.
+            glPixelStorei(GL_PACK_ALIGNMENT, 1)
             glReadPixels(0, 0, dims.width, dims.height, GL_RED, GL_UNSIGNED_BYTE, buf)
             glBindFramebuffer(GL_FRAMEBUFFER, 0)
         }
@@ -400,13 +406,17 @@ void main() {
     gl_FragColor = vec4(y, 0.0, 0.0, 0.0);
 }"""
 
+        // Chroma sample. The chroma FBO is half luma resolution, so a chroma
+        // fragment's `vTexCoord` lands exactly on the shared center of the
+        // corresponding 2x2 luma block — a single GL_LINEAR tap there bilinearly
+        // averages that 2x2, giving a correctly *centered* chroma value.
+        //
+        // The previous manual 4-tap box sampled (0, +x, +y, +xy), i.e. averaged
+        // toward the bottom-right, biasing chroma ~half a texel off-centre from
+        // luma → directional green/magenta edge fringing ("3D glasses"). srcSize
+        // is no longer needed.
         private const val subsampledRgb = """
-    vec2 step = 1.0 / srcSize;
-    vec3 rgbQ1 = texture2D(sTexture, vTexCoord).rgb;
-    vec3 rgbQ2 = texture2D(sTexture, vTexCoord + vec2(step.x, 0.0)).rgb;
-    vec3 rgbQ3 = texture2D(sTexture, vTexCoord + vec2(0.0, step.y)).rgb;
-    vec3 rgbQ4 = texture2D(sTexture, vTexCoord + vec2(step.x, step.y)).rgb;
-    vec3 rgb = (rgbQ1 + rgbQ2 + rgbQ3 + rgbQ4) * 0.25;"""
+    vec3 rgb = texture2D(sTexture, vTexCoord).rgb;"""
 
         private const val fragmentShaderU = fragShaderHeader + """
 uniform vec2 srcSize;
@@ -535,8 +545,17 @@ void main() {""" + subsampledRgb + """
             glUniformMatrix4fv(prog.texMatrix, 1, false, texMatrix, 0)
 
             if (prog.srcSize != 0) {
-                val metrics = android.content.res.Resources.getSystem().displayMetrics
-                glUniform2f(prog.srcSize, metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+                // `step = 1.0/srcSize` in the chroma shader must equal one *luma*
+                // texel so the 2x2 box-filter averages the correct block. The
+                // chroma FBO is half luma resolution, so luma size = fb.dims * 2.
+                // (Previously this used the device screen size, which mis-spaced
+                // the samples and produced chroma misregistration — the
+                // anaglyph / "3D-glasses" color fringing.)
+                glUniform2f(
+                    prog.srcSize,
+                    fb.dims.width.toFloat() * 2f,
+                    fb.dims.height.toFloat() * 2f,
+                )
             }
 
             glActiveTexture(GL_TEXTURE0)

@@ -218,6 +218,41 @@ pub(crate) fn resolve_android_files_dir(app: &PlatformApp) -> Result<PathBuf> {
 #[cfg(target_os = "android")]
 static PROCESS_FRAME_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Debug: dump a raw I420 frame to `<files_dir>/dump/`. Toggle at runtime (no
+/// rebuild) by creating the marker file `<files_dir>/dump/on`. Captures the
+/// first 5 frames + one every ~4s so the dump stays small. This is the camera →
+/// GL → native output, *before* any GStreamer videocrop/videoflip, so it
+/// isolates the GL YUV conversion from later pipeline stages.
+///
+/// View on host (after `adb pull`):
+///   gst-launch-1.0 filesrc location=cam_1920x1080_00003.i420 \
+///     ! rawvideoparse width=1920 height=1080 format=i420 \
+///     ! videoconvert ! pngenc ! filesink location=cam.png
+#[cfg(target_os = "android")]
+fn maybe_dump_i420(tag: &str, count: u64, width: usize, height: usize, y: &[u8], u: &[u8], v: &[u8]) {
+    if count >= 5 && count % 120 != 0 {
+        return;
+    }
+    let Some(dir) = crate::config::get_files_dir() else {
+        return;
+    };
+    let dump_dir = dir.join("dump");
+    if !dump_dir.join("on").exists() {
+        return; // marker absent → disabled
+    }
+    if std::fs::create_dir_all(&dump_dir).is_err() {
+        return;
+    }
+    let path = dump_dir.join(format!("{tag}_{width}x{height}_{count:05}.i420"));
+    if let Ok(mut f) = std::fs::File::create(&path) {
+        use std::io::Write;
+        let _ = f.write_all(y);
+        let _ = f.write_all(u);
+        let _ = f.write_all(v);
+        info!("dumped camera frame to {}", path.display());
+    }
+}
+
 #[cfg(target_os = "android")]
 pub(crate) fn process_frame<'local>(
     env: jni::JNIEnv<'local>,
@@ -271,6 +306,9 @@ pub(crate) fn process_frame<'local>(
     let slice_y = buffer_as_slice(&env, &buffer_y, width * height)?;
     let slice_u = buffer_as_slice(&env, &buffer_u, (width / 2) * (height / 2))?;
     let slice_v = buffer_as_slice(&env, &buffer_v, (width / 2) * (height / 2))?;
+
+    // Debug: dump the raw camera frame (GL conversion output) before videocrop.
+    maybe_dump_i420("cam", pf_count, width, height, slice_y, slice_u, slice_v);
 
     let info = match gst_video::VideoInfo::builder(
         gst_video::VideoFormat::I420,

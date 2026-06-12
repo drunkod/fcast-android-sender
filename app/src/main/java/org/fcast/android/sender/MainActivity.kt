@@ -11,6 +11,7 @@ import android.os.Handler
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
+import android.content.pm.ActivityInfo
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -23,6 +24,7 @@ import org.fcast.android.sender.capture.CaptureConfig
 import org.fcast.android.sender.capture.ScreenCaptureCoordinator
 import org.fcast.android.sender.capture.CameraCaptureConfig
 import org.fcast.android.sender.capture.CameraCaptureCoordinator
+import org.fcast.android.sender.capture.OrientationMode
 import org.fcast.android.sender.capture.RealCameraCaptureCoordinator
 import org.fcast.android.sender.discovery.Discoverer
 import org.fcast.android.sender.qr.QrScannerLauncher
@@ -57,8 +59,8 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
                 REQ_CAMERA_PERM
             )
         }
-        override fun onCameraCaptureStarted(width: Int, height: Int) {
-            nativeCameraCaptureStarted(width, height)
+        override fun onCameraCaptureStarted(width: Int, height: Int, rotationDeg: Int) {
+            nativeCameraCaptureStarted(width, height, rotationDeg)
         }
         override fun onCameraCaptureStopped() {
             nativeCameraCaptureStopped()
@@ -283,15 +285,19 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         nativeSlintApplyState(slintState, banner, severity)
     }
 
-    // Called from Rust via JNI
+    // Called from Rust via JNI.
+    // orientationModeInt: 0=PORTRAIT, 1=LANDSCAPE, 2=AUTO (matches OrientationMode ordinal).
     @Suppress("unused")
     private fun startCameraCapture(
         cameraIdx: Int, width: Int, height: Int, fps: Int,
         mirror: Boolean, stabilization: Boolean, zoom: Float,
+        orientationModeInt: Int = 0,
     ) {
+        val mode = OrientationMode.entries.getOrElse(orientationModeInt) { OrientationMode.PORTRAIT }
         runOnUiThread {
+            applyOrientationLock(mode)
             cameraCoordinator.startCapture(
-                CameraCaptureConfig(cameraIdx, width, height, fps, mirror, stabilization, zoom),
+                CameraCaptureConfig(cameraIdx, width, height, fps, mirror, stabilization, zoom, mode),
                 cameraPreviewSurface?.takeIf { it.isValid },
             )
         }
@@ -306,15 +312,30 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         }
     }
 
-    // Called from Rust via JNI
+    /**
+     * Locks or unlocks the screen orientation to match the stream's orientation mode.
+     * Mirrors Moblin's updateOrientationLock() in Model.swift:2035.
+     */
+    private fun applyOrientationLock(mode: OrientationMode) {
+        requestedOrientation = when (mode) {
+            OrientationMode.PORTRAIT  -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            OrientationMode.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            OrientationMode.AUTO      -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    // Called from Rust via JNI.
+    // orientationModeInt: 0=PORTRAIT, 1=LANDSCAPE, 2=AUTO (matches OrientationMode ordinal).
     @Suppress("unused")
     private fun startCameraPreview(
         cameraIdx: Int, width: Int, height: Int, fps: Int,
         mirror: Boolean, stabilization: Boolean, zoom: Float,
+        orientationModeInt: Int = 0,
     ) {
+        val mode = OrientationMode.entries.getOrElse(orientationModeInt) { OrientationMode.PORTRAIT }
         runOnUiThread {
             cameraPreviewRequested = true
-            cameraPreviewConfig = CameraCaptureConfig(cameraIdx, width, height, fps, mirror, stabilization, zoom)
+            cameraPreviewConfig = CameraCaptureConfig(cameraIdx, width, height, fps, mirror, stabilization, zoom, mode)
             ensureCameraPreviewView().visibility = View.VISIBLE
             maybeStartCameraPreview()
         }
@@ -417,7 +438,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     external fun nativeCaptureStarted()
     external fun nativeCaptureStopped()
     external fun nativeCaptureCancelled()
-    external fun nativeCameraCaptureStarted(width: Int, height: Int)
+    external fun nativeCameraCaptureStarted(width: Int, height: Int, rotationDeg: Int)
     external fun nativeCameraCaptureStopped()
     external fun nativeCameraCaptureFailed(reason: String)
     external fun nativeCameraPermissionResult(granted: Boolean)
