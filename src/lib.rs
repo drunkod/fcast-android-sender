@@ -320,6 +320,18 @@ pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeSlintApplySta
     crate::jni_bridge::main_activity::native_slint_apply_state(env, class, state, banner, severity)
 }
 
+#[cfg(target_os = "android")]
+#[allow(non_snake_case)]
+#[unsafe(no_mangle)]
+pub extern "C" fn Java_org_fcast_android_sender_MainActivity_nativeUseStreamPackCameraPath<
+    'local,
+>(
+    env: jni::JNIEnv<'local>,
+    class: jni::objects::JClass<'local>,
+) -> jni::sys::jboolean {
+    crate::jni_bridge::main_activity::native_use_stream_pack_camera_path(env, class)
+}
+
 // ── gst-pop service host JNI bridge ──────────────────────────────────────────
 // Symbols match GstPopServiceBridge in the `org.fcast.android.sender` package.
 

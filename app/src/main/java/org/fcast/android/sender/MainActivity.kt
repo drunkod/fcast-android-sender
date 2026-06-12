@@ -26,6 +26,7 @@ import org.fcast.android.sender.capture.CameraCaptureConfig
 import org.fcast.android.sender.capture.CameraCaptureCoordinator
 import org.fcast.android.sender.capture.OrientationMode
 import org.fcast.android.sender.capture.RealCameraCaptureCoordinator
+import org.fcast.android.sender.capture.StreamPackCameraCaptureCoordinator
 import org.fcast.android.sender.discovery.Discoverer
 import org.fcast.android.sender.qr.QrScannerLauncher
 import org.fcast.android.sender.runtime.BackendKind
@@ -39,7 +40,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
 
     private lateinit var displayManager: DisplayManager
     private lateinit var coordinator: ScreenCaptureCoordinator
-    private lateinit var cameraCoordinator: RealCameraCaptureCoordinator
+    private lateinit var cameraCoordinator: CameraCaptureCoordinator
     private lateinit var qr: QrScannerLauncher
     private lateinit var controller: SenderController
 
@@ -110,7 +111,11 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         coordinator = (application as FcastApp).graph.newCaptureCoordinator(captureCallbacks)
         coordinator.attach()
 
-        cameraCoordinator = RealCameraCaptureCoordinator(applicationContext, cameraCallbacks)
+        cameraCoordinator = if (nativeUseStreamPackCameraPath()) {
+            (application as FcastApp).graph.newStreamPackCameraCoordinator(cameraCallbacks)
+        } else {
+            RealCameraCaptureCoordinator(applicationContext, cameraCallbacks)
+        }
         cameraCoordinator.attach()
 
         qr = org.fcast.android.sender.qr.RealQrScannerLauncher(this)
@@ -132,8 +137,13 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO), REQ_CAMERA_PERM)
         } else {
-            cameraCoordinator.onPermissionResult(true)
-            startDefaultCameraPreview()
+            when (val c = cameraCoordinator) {
+                is RealCameraCaptureCoordinator -> c.onPermissionResult(true)
+                is StreamPackCameraCaptureCoordinator -> c.onPermissionResult(true)
+            }
+            if (!nativeUseStreamPackCameraPath()) {
+                startDefaultCameraPreview()
+            }
         }
     }
 
@@ -206,9 +216,12 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_CAMERA_PERM) {
             val cameraGranted = checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            cameraCoordinator.onPermissionResult(cameraGranted)
+            when (val c = cameraCoordinator) {
+                is RealCameraCaptureCoordinator -> c.onPermissionResult(cameraGranted)
+                is StreamPackCameraCaptureCoordinator -> c.onPermissionResult(cameraGranted)
+            }
             nativeCameraPermissionResult(cameraGranted)
-            if (cameraGranted) {
+            if (cameraGranted && !nativeUseStreamPackCameraPath()) {
                 startDefaultCameraPreview()
             }
         }
@@ -309,6 +322,34 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         runOnUiThread {
             cameraCoordinator.stopCapture()
             maybeStartCameraPreview()
+        }
+    }
+
+    @Suppress("unused")
+    private fun startStreamPackCamera(configJson: String) {
+        val j = org.json.JSONObject(configJson)
+        val mode = when (j.optString("orientationMode", "LANDSCAPE")) {
+            "PORTRAIT" -> OrientationMode.PORTRAIT
+            "AUTO" -> OrientationMode.AUTO
+            else -> OrientationMode.LANDSCAPE
+        }
+        val cfg = CameraCaptureConfig(
+            cameraIdx = j.optInt("cameraIdx", 1),
+            width = j.optInt("width", 1280),
+            height = j.optInt("height", 720),
+            maxFps = j.optInt("maxFps", 30),
+            mirror = j.optBoolean("mirror", false),
+            stabilization = j.optBoolean("stabilization", true),
+            zoom = j.optDouble("zoom", 1.0).toFloat(),
+            orientationMode = mode,
+        )
+        runOnUiThread {
+            applyOrientationLock(mode)
+            if (nativeUseStreamPackCameraPath()) {
+                destroyCameraPreview()
+            }
+            (cameraCoordinator as? StreamPackCameraCaptureCoordinator)?.setSrtUrl(j.optString("srtUrl"))
+            cameraCoordinator.startCapture(cfg, cameraPreviewSurface?.takeIf { it.isValid })
         }
     }
 
@@ -415,6 +456,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     }
 
     private fun maybeStartCameraPreview() {
+        if (nativeUseStreamPackCameraPath()) return
         if (!cameraPreviewRequested || cameraCoordinator.isCapturing) return
         val config = cameraPreviewConfig ?: return
         val surface = cameraPreviewSurface?.takeIf { it.isValid } ?: return
@@ -443,7 +485,8 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     external fun nativeCameraCaptureFailed(reason: String)
     external fun nativeCameraPermissionResult(granted: Boolean)
     external fun nativeQrScanResult(result: String)
-    external fun nativeSlintApplyState(state: Int, banner: String, severity: Int)
+    private external fun nativeSlintApplyState(state: Int, banner: String, severity: Int)
+    private external fun nativeUseStreamPackCameraPath(): Boolean
 
     companion object {
         init {

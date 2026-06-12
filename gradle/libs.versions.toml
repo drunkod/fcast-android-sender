@@ -13,6 +13,7 @@ mockito = "5.12.0"
 robolectric = "4.13"
 androidxTestCore = "1.6.1"
 androidxTestRunner = "1.6.2"
+streampack = "3.1.1"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }
@@ -31,6 +32,8 @@ robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "androidxTestCore" }
+streampack-core = { group = "io.github.thibaultbee.streampack", name = "streampack-core", version.ref = "streampack" }
+streampack-srt = { group = "io.github.thibaultbee.streampack", name = "streampack-srt", version.ref = "streampack" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

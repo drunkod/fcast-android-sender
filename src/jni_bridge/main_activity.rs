@@ -5,6 +5,8 @@
 //! `Java_org_fcast_android_sender_MainActivity_*` symbol names.
 
 #[cfg(target_os = "android")]
+use crate::config::AndroidCameraPipeline;
+#[cfg(target_os = "android")]
 use jni::{
     objects::{JByteBuffer, JClass, JString},
     JNIEnv,
@@ -234,6 +236,18 @@ pub fn native_slint_apply_state<'local>(
     }) {
         error!(?err, "Failed to apply Slint state from Kotlin");
     }
+}
+
+#[cfg(target_os = "android")]
+pub fn native_use_stream_pack_camera_path<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jni::sys::jboolean {
+    let use_streampack = !matches!(
+        crate::config::load().android_camera_pipeline,
+        AndroidCameraPipeline::LegacyRawI420Gstreamer
+    );
+    u8::from(use_streampack)
 }
 
 #[cfg(target_os = "android")]

@@ -1,5 +1,13 @@
 pub mod migration;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub enum AndroidCameraPipeline {
+    #[default]
+    LegacyRawI420Gstreamer,
+    StreamPackDirectSrt,
+    StreamPackEncodedToGstreamer,
+}
+
 pub use crate::backend::persistence::{
     CameraRtmpConfig, SrtDestinationConfig, StoredBackendConfig,
 };

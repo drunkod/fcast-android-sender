@@ -2,7 +2,9 @@ package org.fcast.android.sender
 
 import android.content.Context
 import org.fcast.android.sender.capture.CaptureEngine
+import org.fcast.android.sender.capture.CameraCaptureCoordinator
 import org.fcast.android.sender.capture.ScreenCaptureCoordinator
+import org.fcast.android.sender.capture.StreamPackCameraCaptureCoordinator
 import org.fcast.android.sender.data.AndroidSecretStore
 import org.fcast.android.sender.data.SecretStore
 import org.fcast.android.sender.runtime.JniRuntimeBridge
@@ -37,5 +39,12 @@ class AppGraph(
         applicationContext = appContext,
         callbacks = callbacks,
         engineFactory = { CaptureEngine() },
+    )
+
+    fun newStreamPackCameraCoordinator(
+        callbacks: CameraCaptureCoordinator.Callbacks,
+    ): CameraCaptureCoordinator = StreamPackCameraCaptureCoordinator(
+        applicationContext = appContext,
+        callbacks = callbacks,
     )
 }

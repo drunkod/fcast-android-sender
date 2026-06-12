@@ -3,9 +3,15 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use migration_runtime::protocol::{Scene, Widget};
+
+use crate::config::AndroidCameraPipeline;
 use serde::{Deserialize, Serialize};
 
 use super::BackendKind;
+
+fn default_android_camera_pipeline() -> AndroidCameraPipeline {
+    AndroidCameraPipeline::LegacyRawI420Gstreamer
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct CameraRtmpConfig {
@@ -90,6 +96,8 @@ pub struct StoredBackendConfig {
     pub global_camera: Option<GlobalCameraConfig>,
     #[serde(default)]
     pub srt_destination: Option<SrtDestinationConfig>,
+    #[serde(default = "default_android_camera_pipeline")]
+    pub android_camera_pipeline: AndroidCameraPipeline,
     #[serde(default)]
     pub scenes: Vec<Scene>,
     #[serde(default)]
@@ -109,6 +117,7 @@ impl StoredBackendConfig {
             camera_rtmp: None,
             global_camera: None,
             srt_destination: None,
+            android_camera_pipeline: AndroidCameraPipeline::LegacyRawI420Gstreamer,
             scenes: vec![Scene {
                 id: "scene-main".to_owned(),
                 name: "Main".to_owned(),

@@ -706,6 +706,11 @@ fn android_main(app: PlatformApp) {
     let global_cam_cfg = backend_cfg.global_camera.unwrap_or_default();
     let b = ui.global::<Bridge>();
     b.set_cam_rtmp_url(rtmp_cfg.url.into());
+    b.set_camera_pipeline_mode_idx(match backend_cfg.android_camera_pipeline {
+        crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer => 0,
+        crate::config::AndroidCameraPipeline::StreamPackDirectSrt => 1,
+        crate::config::AndroidCameraPipeline::StreamPackEncodedToGstreamer => 2,
+    });
     b.set_camera_idx(global_cam_cfg.camera_idx);
     b.set_resolution_idx(global_cam_cfg.resolution_idx);
     b.set_framerate_idx(global_cam_cfg.framerate_idx);
@@ -1194,6 +1199,21 @@ fn android_main(app: PlatformApp) {
                 layout,
             });
             push_scene_models(ui_weak.clone(), &snapshot);
+        }
+    });
+
+    ui.global::<Bridge>().on_set_camera_pipeline_mode({
+        move |idx| {
+            let mode = match idx {
+                1 => crate::config::AndroidCameraPipeline::StreamPackDirectSrt,
+                2 => crate::config::AndroidCameraPipeline::StreamPackEncodedToGstreamer,
+                _ => crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer,
+            };
+            if let Err(e) = crate::config::update(|cfg| {
+                cfg.android_camera_pipeline = mode;
+            }) {
+                tracing::error!("Failed to save camera pipeline mode: {e}");
+            }
         }
     });
 
@@ -2800,6 +2820,7 @@ fn android_main(app: PlatformApp) {
 
             let (
                 backend,
+                pipeline_mode_idx,
                 uri,
                 latency,
                 pass,
@@ -2817,6 +2838,7 @@ fn android_main(app: PlatformApp) {
                     let d = b.get_srt_destination();
                     (
                         b.get_media_backend(),
+                        b.get_camera_pipeline_mode_idx(),
                         d.uri.to_string(),
                         d.latency_ms,
                         b.get_srt_destination_passphrase().to_string(),
@@ -2864,57 +2886,74 @@ fn android_main(app: PlatformApp) {
             };
 
             let ui_clone = ui.clone();
+            let pipeline_mode = match pipeline_mode_idx {
+                1 => crate::config::AndroidCameraPipeline::StreamPackDirectSrt,
+                2 => crate::config::AndroidCameraPipeline::StreamPackEncodedToGstreamer,
+                _ => crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer,
+            };
             tokio::spawn(async move {
-                if let Err(e) = migration_runtime::runtime::start_graph_runtime(
-                    migration_runtime::runtime::RuntimeHandles {
-                        frame_pair: crate::FRAME_PAIR.clone(),
-                    },
+                if matches!(
+                    pipeline_mode,
+                    crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer
                 ) {
-                    return srt_fail(&ui_clone, format!("start_graph_runtime: {e}"));
+                    if let Err(e) = migration_runtime::runtime::start_graph_runtime(
+                        migration_runtime::runtime::RuntimeHandles {
+                            frame_pair: crate::FRAME_PAIR.clone(),
+                        },
+                    ) {
+                        return srt_fail(&ui_clone, format!("start_graph_runtime: {e}"));
+                    }
                 }
 
-                let commands = vec![
-                    Command::CreateCameraSource {
-                        id: "srt-cam-src".into(),
-                        camera_idx: cam_idx as u32,
-                        width,
-                        height,
-                        fps,
-                        mirror,
-                        stabilization: stab,
-                        zoom,
-                        rotation_deg: None,
-                    },
-                    Command::CreateDestination {
-                        id: "srt-dest".into(),
-                        family: DestinationFamily::Srt {
-                            uri,
-                            latency,
-                            passphrase,
-                            pbkeylen,
+                let commands = if matches!(
+                    pipeline_mode,
+                    crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer
+                ) {
+                    vec![
+                        Command::CreateCameraSource {
+                            id: "srt-cam-src".into(),
+                            camera_idx: cam_idx as u32,
+                            width,
+                            height,
+                            fps,
+                            mirror,
+                            stabilization: stab,
+                            zoom,
+                            rotation_deg: None,
                         },
-                        audio: false,
-                        video: true,
-                    },
-                    Command::Connect {
-                        link_id: "srt-link".into(),
-                        src_id: "srt-cam-src".into(),
-                        sink_id: "srt-dest".into(),
-                        audio: false,
-                        video: true,
-                        config: None,
-                    },
-                    Command::Start {
-                        id: "srt-dest".into(),
-                        cue_time: None,
-                        end_time: None,
-                    },
-                    Command::Start {
-                        id: "srt-cam-src".into(),
-                        cue_time: None,
-                        end_time: None,
-                    },
-                ];
+                        Command::CreateDestination {
+                            id: "srt-dest".into(),
+                            family: DestinationFamily::Srt {
+                                uri: uri.clone(),
+                                latency,
+                                passphrase: passphrase.clone(),
+                                pbkeylen,
+                            },
+                            audio: false,
+                            video: true,
+                        },
+                        Command::Connect {
+                            link_id: "srt-link".into(),
+                            src_id: "srt-cam-src".into(),
+                            sink_id: "srt-dest".into(),
+                            audio: false,
+                            video: true,
+                            config: None,
+                        },
+                        Command::Start {
+                            id: "srt-dest".into(),
+                            cue_time: None,
+                            end_time: None,
+                        },
+                        Command::Start {
+                            id: "srt-cam-src".into(),
+                            cue_time: None,
+                            end_time: None,
+                        },
+                    ]
+                } else {
+                    vec![]
+                };
                 for cmd in commands {
                     if let CommandResult::Error(err) =
                         migration_runtime::runtime::handle_command(cmd)
@@ -2924,18 +2963,44 @@ fn android_main(app: PlatformApp) {
                     }
                 }
 
-                if let Err(e) = upcall_start_camera_capture(
-                    cam_idx as u32,
-                    width,
-                    height,
-                    fps,
-                    mirror,
-                    stab,
-                    zoom,
-                    orientation_mode,
-                ) {
+                let start_res = match pipeline_mode {
+                    crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer => {
+                        upcall_start_camera_capture(
+                            cam_idx as u32,
+                            width,
+                            height,
+                            fps,
+                            mirror,
+                            stab,
+                            zoom,
+                            orientation_mode,
+                        )
+                    }
+                    crate::config::AndroidCameraPipeline::StreamPackDirectSrt
+                    | crate::config::AndroidCameraPipeline::StreamPackEncodedToGstreamer => {
+                        let orientation_mode = match orientation_mode {
+                            0 => "PORTRAIT",
+                            2 => "AUTO",
+                            _ => "LANDSCAPE",
+                        };
+                        let config_json = serde_json::json!({
+                            "cameraIdx": cam_idx,
+                            "width": width,
+                            "height": height,
+                            "maxFps": fps,
+                            "mirror": mirror,
+                            "stabilization": stab,
+                            "zoom": zoom,
+                            "orientationMode": orientation_mode,
+                            "srtUrl": uri,
+                        })
+                        .to_string();
+                        crate::jni_bridge::camera::upcall_start_streampack_camera(&config_json)
+                    }
+                };
+                if let Err(e) = start_res {
                     tear_down_srt();
-                    return srt_fail(&ui_clone, format!("startCameraCapture: {e}"));
+                    return srt_fail(&ui_clone, format!("start camera: {e}"));
                 }
                 // State flips to Running on CameraEvent::Started.
             });

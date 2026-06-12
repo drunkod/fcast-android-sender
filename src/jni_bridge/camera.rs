@@ -1,7 +1,7 @@
 //! JNI bridge — camera upcalls.
 
 #[cfg(target_os = "android")]
-use jni::objects::JValue;
+use jni::objects::{JString, JValue};
 
 #[cfg(target_os = "android")]
 pub fn upcall_start_camera_capture(
@@ -46,6 +46,26 @@ pub fn upcall_start_camera_capture(
     _zoom: f32,
     _orientation_mode: i32,
 ) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+pub fn upcall_start_streampack_camera(config_json: &str) -> Result<(), String> {
+    let ctx = crate::android_context().map_err(|e| e.to_string())?;
+    let mut env = ctx.vm.attach_current_thread().map_err(|e| e.to_string())?;
+    let j: JString = env.new_string(config_json).map_err(|e| e.to_string())?;
+    env.call_method(
+        &ctx.activity,
+        "startStreamPackCamera",
+        "(Ljava/lang/String;)V",
+        &[JValue::Object(&j.into())],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn upcall_start_streampack_camera(_config_json: &str) -> Result<(), String> {
     Ok(())
 }
 

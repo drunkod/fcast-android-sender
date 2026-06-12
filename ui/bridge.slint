@@ -511,6 +511,10 @@ export global Bridge {
     callback request-cam-rtmp-camera-permission();
     callback save-cam-rtmp-config();
 
+    // 0=Legacy 1=StreamPackDirectSrt 2=StreamPackEncodedToGstreamer
+    in-out property <int> camera-pipeline-mode-idx: 0;
+    callback set-camera-pipeline-mode(int);
+
     in-out property <SrtDestination> srt-destination: {
         uri:        "",
         latency-ms: 200,
