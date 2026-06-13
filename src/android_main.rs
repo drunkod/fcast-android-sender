@@ -706,6 +706,9 @@ fn android_main(app: PlatformApp) {
     let global_cam_cfg = backend_cfg.global_camera.unwrap_or_default();
     let b = ui.global::<Bridge>();
     b.set_cam_rtmp_url(rtmp_cfg.url.into());
+    // Lock the session pipeline mode to the launch value before the selector can
+    // change it; start/stop read this, never the live selector idx (see config::*).
+    crate::config::prime_session_android_camera_pipeline(backend_cfg.android_camera_pipeline);
     b.set_camera_pipeline_mode_idx(match backend_cfg.android_camera_pipeline {
         crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer => 0,
         crate::config::AndroidCameraPipeline::StreamPackDirectSrt => 1,
@@ -2820,7 +2823,6 @@ fn android_main(app: PlatformApp) {
 
             let (
                 backend,
-                pipeline_mode_idx,
                 uri,
                 latency,
                 pass,
@@ -2838,7 +2840,6 @@ fn android_main(app: PlatformApp) {
                     let d = b.get_srt_destination();
                     (
                         b.get_media_backend(),
-                        b.get_camera_pipeline_mode_idx(),
                         d.uri.to_string(),
                         d.latency_ms,
                         b.get_srt_destination_passphrase().to_string(),
@@ -2886,11 +2887,8 @@ fn android_main(app: PlatformApp) {
             };
 
             let ui_clone = ui.clone();
-            let pipeline_mode = match pipeline_mode_idx {
-                1 => crate::config::AndroidCameraPipeline::StreamPackDirectSrt,
-                2 => crate::config::AndroidCameraPipeline::StreamPackEncodedToGstreamer,
-                _ => crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer,
-            };
+            // Launch-fixed mode (matches the Kotlin coordinator); NOT the live selector.
+            let pipeline_mode = crate::config::session_android_camera_pipeline();
             tokio::spawn(async move {
                 if matches!(
                     pipeline_mode,
@@ -2978,6 +2976,15 @@ fn android_main(app: PlatformApp) {
                     }
                     crate::config::AndroidCameraPipeline::StreamPackDirectSrt
                     | crate::config::AndroidCameraPipeline::StreamPackEncodedToGstreamer => {
+                        if matches!(
+                            pipeline_mode,
+                            crate::config::AndroidCameraPipeline::StreamPackEncodedToGstreamer
+                        ) {
+                            tracing::warn!(
+                                "StreamPackEncodedToGstreamer is not implemented yet \
+                                 (Phase 2, steps 08-10); falling back to direct StreamPack SRT"
+                            );
+                        }
                         let orientation_mode = match orientation_mode {
                             0 => "PORTRAIT",
                             2 => "AUTO",
@@ -3013,8 +3020,21 @@ fn android_main(app: PlatformApp) {
             let ui = ui_weak.clone();
             srt_set_state(&ui, MixerState::Stopping);
             tokio::spawn(async move {
-                let _ = upcall_stop_camera_capture();
-                tear_down_srt();
+                if let Err(err) = upcall_stop_camera_capture() {
+                    srt_fail(&ui, format!("stopCameraCapture: {err}"));
+                    return;
+                }
+
+                // Only the legacy path builds GStreamer SRT graph nodes; tearing them
+                // down in StreamPack mode would touch a runtime that was never started.
+                // Use the launch-fixed session mode so this can't diverge from start().
+                if matches!(
+                    crate::config::session_android_camera_pipeline(),
+                    crate::config::AndroidCameraPipeline::LegacyRawI420Gstreamer
+                ) {
+                    tear_down_srt();
+                }
+
                 let _ = ui.upgrade_in_event_loop(|u| {
                     let b = u.global::<Bridge>();
                     let mut d = b.get_srt_destination();
@@ -3041,13 +3061,12 @@ fn android_main(app: PlatformApp) {
                     let _ = cam_event_ui_weak.upgrade_in_event_loop(|u| {
                         let b = u.global::<Bridge>();
                         b.set_cam_rtmp_camera_permission(true);
-                        b.set_cam_rtmp_state(MixerState::Running);
-                        // Promote an in-flight SRT destination to Running too — the
-                        // camera is shared, so only one of the two is Starting.
                         let mut srt = b.get_srt_destination();
                         if srt.state == MixerState::Starting {
                             srt.state = MixerState::Running;
                             b.set_srt_destination(srt);
+                        } else {
+                            b.set_cam_rtmp_state(MixerState::Running);
                         }
                     });
                 }
@@ -3069,36 +3088,35 @@ fn android_main(app: PlatformApp) {
                 crate::jni_bridge::main_activity::CameraEvent::Failed { reason } => {
                     tracing::warn!("camera capture failed: {reason}");
 
-                    let backend = cam_event_ui_weak
-                        .upgrade()
-                        .map(|u| u.global::<Bridge>().get_media_backend());
-
-                    match backend {
-                        Some(MediaBackendKind::Migration) => {
-                            tear_down_migration();
-                        }
-                        Some(MediaBackendKind::GstPop) => {
-                            let session = CAM_RTMP_GSTPOP_SESSION.lock().take();
-                            if let Some(session) = session {
-                                tokio::spawn(async move {
-                                    teardown_gstpop_session(session).await;
-                                });
-                            }
-                        }
-                        None => {}
-                    }
-
-                    fail(&cam_event_ui_weak, reason.clone());
-
-                    // If an SRT destination was in flight, surface the failure there
-                    // too and tear down its (distinct) graph nodes.
                     let srt_active = cam_event_ui_weak.upgrade().map(|u| {
                         let st = u.global::<Bridge>().get_srt_destination().state;
                         st == MixerState::Starting || st == MixerState::Running
                     });
+
                     if srt_active == Some(true) {
                         tear_down_srt();
                         srt_fail(&cam_event_ui_weak, reason.clone());
+                    } else {
+                        let backend = cam_event_ui_weak
+                            .upgrade()
+                            .map(|u| u.global::<Bridge>().get_media_backend());
+
+                        match backend {
+                            Some(MediaBackendKind::Migration) => {
+                                tear_down_migration();
+                            }
+                            Some(MediaBackendKind::GstPop) => {
+                                let session = CAM_RTMP_GSTPOP_SESSION.lock().take();
+                                if let Some(session) = session {
+                                    tokio::spawn(async move {
+                                        teardown_gstpop_session(session).await;
+                                    });
+                                }
+                            }
+                            None => {}
+                        }
+
+                        fail(&cam_event_ui_weak, reason.clone());
                     }
 
                     if reason == "Camera permission denied" {

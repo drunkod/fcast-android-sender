@@ -44,6 +44,11 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     private lateinit var qr: QrScannerLauncher
     private lateinit var controller: SenderController
 
+    // Cached once: the pipeline mode is restart-required (Phase 1 / Option A), so the
+    // value can't change during the session. Avoids repeated main-thread JNI→disk reads
+    // (nativeUseStreamPackCameraPath() calls crate::config::load()).
+    private val useStreamPack: Boolean by lazy { nativeUseStreamPackCameraPath() }
+
     private val activityScope = MainScope()
     private var cameraPreviewView: SurfaceView? = null
     private var cameraPreviewSurface: Surface? = null
@@ -111,7 +116,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         coordinator = (application as FcastApp).graph.newCaptureCoordinator(captureCallbacks)
         coordinator.attach()
 
-        cameraCoordinator = if (nativeUseStreamPackCameraPath()) {
+        cameraCoordinator = if (useStreamPack) {
             (application as FcastApp).graph.newStreamPackCameraCoordinator(cameraCallbacks)
         } else {
             RealCameraCaptureCoordinator(applicationContext, cameraCallbacks)
@@ -141,7 +146,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
                 is RealCameraCaptureCoordinator -> c.onPermissionResult(true)
                 is StreamPackCameraCaptureCoordinator -> c.onPermissionResult(true)
             }
-            if (!nativeUseStreamPackCameraPath()) {
+            if (!useStreamPack) {
                 startDefaultCameraPreview()
             }
         }
@@ -221,7 +226,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
                 is StreamPackCameraCaptureCoordinator -> c.onPermissionResult(cameraGranted)
             }
             nativeCameraPermissionResult(cameraGranted)
-            if (cameraGranted && !nativeUseStreamPackCameraPath()) {
+            if (cameraGranted && !useStreamPack) {
                 startDefaultCameraPreview()
             }
         }
@@ -321,7 +326,11 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     private fun stopCameraCapture() {
         runOnUiThread {
             cameraCoordinator.stopCapture()
-            maybeStartCameraPreview()
+            if (useStreamPack) {
+                destroyCameraPreview()
+            } else {
+                maybeStartCameraPreview()
+            }
         }
     }
 
@@ -345,7 +354,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         )
         runOnUiThread {
             applyOrientationLock(mode)
-            if (nativeUseStreamPackCameraPath()) {
+            if (useStreamPack) {
                 destroyCameraPreview()
             }
             (cameraCoordinator as? StreamPackCameraCaptureCoordinator)?.setSrtUrl(j.optString("srtUrl"))
@@ -373,6 +382,10 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
         mirror: Boolean, stabilization: Boolean, zoom: Float,
         orientationModeInt: Int = 0,
     ) {
+        // StreamPack mode owns the camera; the legacy SurfaceView preview must never be
+        // created (it would be an orphan surface no one renders to). Preview fanout for
+        // StreamPack is Phase 4 (SurfaceProcessor).
+        if (useStreamPack) return
         val mode = OrientationMode.entries.getOrElse(orientationModeInt) { OrientationMode.PORTRAIT }
         runOnUiThread {
             cameraPreviewRequested = true
@@ -456,7 +469,7 @@ class MainActivity : NativeActivity(), DisplayManager.DisplayListener {
     }
 
     private fun maybeStartCameraPreview() {
-        if (nativeUseStreamPackCameraPath()) return
+        if (useStreamPack) return
         if (!cameraPreviewRequested || cameraCoordinator.isCapturing) return
         val config = cameraPreviewConfig ?: return
         val surface = cameraPreviewSurface?.takeIf { it.isValid } ?: return

@@ -378,7 +378,9 @@ export component ProtocolSrtSettingsPage inherits Rectangle {
                             }
                         }
 
-                        if Bridge.srt-destination.state == MixerState.running: Button {
+                        // Visible for any non-idle state (starting / running / stopping /
+                        // error) so the user can always abort or clear; hidden only at idle.
+                        if Bridge.srt-destination.state != MixerState.idle: Button {
                             text: @tr("Stop Stream");
                             variant: ButtonVariant.destructive;
                             size: ButtonSize.lg;

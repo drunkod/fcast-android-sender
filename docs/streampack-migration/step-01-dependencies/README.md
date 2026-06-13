@@ -4,9 +4,9 @@
 
 ## Goal
 
-Add `streampack-core` + `streampack-srt` (3.1.1) to the build via the version catalog,
-without changing the legacy build behaviour. Confirm the manifest already has what we
-need (it does).
+Add `streampack-core` + `streampack-srt` (3.1.2, latest on Maven Central) to the build
+via the version catalog, without changing the legacy build behaviour. Confirm the
+manifest already has what we need (it does).
 
 ## Files touched
 
@@ -21,7 +21,7 @@ need (it does).
 ```toml
 [versions]
 # … existing …
-streampack = "3.1.1"   # matches draft/StreamPack-boilerplate
+streampack = "3.1.2"   # latest on Maven Central (boilerplate was 3.1.1)
 
 [libraries]
 # … existing …
@@ -64,7 +64,7 @@ Slint/Rust NativeActivity host loads.
 
 ## Notes
 
-- **minSdk:** ours is `26`; boilerplate is `24`. StreamPack 3.1.1 supports `minSdk 24` →
+- **minSdk:** ours is `26`; boilerplate is `24`. StreamPack 3.1.x supports `minSdk 24` →
   no floor change.
 - **ABI:** we ship `arm64-v8a` only. StreamPack's MediaCodec/Camera2 usage is
   Java/NDK-agnostic → no `Android.mk`/`abiFilters` change for Phase 1.

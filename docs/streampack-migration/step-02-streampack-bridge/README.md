@@ -201,10 +201,48 @@ streamer.isStreamingFlow      // Flow<Boolean>
 streamer.throwableFlow        // Flow<Throwable?>
 ```
 
+## Adaptive bitrate (SRT-only) — implemented
+
+The bridge attaches StreamPack's SRT bitrate regulator before `startStream`, so the live
+video bitrate tracks network conditions instead of being fixed. Signatures verified
+against the **3.1.2** artifact (`javap`):
+
+```kotlin
+import android.util.Range
+import io.github.thibaultbee.streampack.core.configuration.BitrateRegulatorConfig
+import io.github.thibaultbee.streampack.ext.srt.regulator.DefaultSrtBitrateRegulator
+import io.github.thibaultbee.streampack.ext.srt.regulator.controllers.DefaultSrtBitrateRegulatorController
+
+// after setVideoConfig/setCameraId/setTargetRotation, BEFORE startStream:
+runCatching { streamer.removeBitrateRegulatorController() }   // clear any prior controller
+streamer.addBitrateRegulatorController(
+    DefaultSrtBitrateRegulatorController.Factory(
+        DefaultSrtBitrateRegulator.Factory(),
+        BitrateRegulatorConfig(
+            Range(minVideoBitrate, maxVideoBitrate),  // video ABR range
+            Range(128_000, 128_000),                  // audio held constant
+        ),
+        500L,                                         // update cadence (ms)
+    )
+)
+// on stop(): runCatching { streamer.removeBitrateRegulatorController() }
+```
+
+Notes:
+- **SRT-only.** The regulator does nothing for RTMP/other sinks.
+- `VideoConfig.bitrate` is the **initial/ceiling**; the regulator moves the live bitrate
+  within `[min, max]` (min = `max/4`, floored at 500 kb/s). Audio stays fixed.
+- Only one regulator may be active at a time → remove-before-add + remove-on-stop.
+- Verified FQNs: regulator/controller live in **`ext.srt.regulator`** (needs
+  `streampack-srt`), `BitrateRegulatorConfig` in `core.configuration`;
+  `SingleStreamer.addBitrateRegulatorController(IBitrateRegulatorController.Factory)` and
+  `removeBitrateRegulatorController()` are **non-suspend**.
+
 ## How to verify
 
 ```
-✅ File compiles against streampack-core 3.1.1 (no unresolved imports).
+✅ File compiles against streampack-core 3.1.2 (no unresolved imports; the API was read
+   from the 3.1.1 boilerplate — re-confirm SingleStreamer ctor + VideoConfig.bitrate).
 ✅ No other file in the app imports io.github.thibaultbee.* (encapsulation holds).
 ✅ Static review: every streamer.* call is inside mutex.withLock { } except the
    release() RELEASED gate write.

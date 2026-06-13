@@ -13,7 +13,7 @@ mockito = "5.12.0"
 robolectric = "4.13"
 androidxTestCore = "1.6.1"
 androidxTestRunner = "1.6.2"
-streampack = "3.1.1"
+streampack = "3.1.2"
 
 [libraries]
 junit = { group = "junit", name = "junit", version.ref = "junit" }

@@ -4,7 +4,10 @@
 > It is the implementation contract; each phase below is independently shippable.
 >
 > Reference implementation cloned to: `draft/StreamPack-boilerplate/`
-> (pins `io.github.thibaultbee.streampack:* = 3.1.1`, verified API surface used below).
+> (pins `io.github.thibaultbee.streampack:* = 3.1.1`, the version the API surface below
+> was verified against). **The app now targets the latest `3.1.2`** — re-verify the
+> version-sensitive bits (`SingleStreamer` construction, `VideoConfig.bitrate`, endpoint
+> `Frame`) on the bump; see §15.
 >
 > Source research: [`docs/draft-plan-to-surface-streampack.md`](./draft-plan-to-surface-streampack.md).
 > This document supersedes the draft where the draft drifted from the real code
@@ -91,7 +94,7 @@ checked-in code. The plan below uses the **real** shapes:
 | Draft assumed | Reality | Impact on plan |
 |---|---|---|
 | `app/build.gradle` Groovy, deps added inline | Groovy **+** version catalog `gradle/libs.versions.toml` | Add catalog entries (§3). |
-| StreamPack `3.1.2` | Boilerplate pins **`3.1.1`** | Pin `3.1.1` (§3). |
+| StreamPack `3.1.2` | Boilerplate pins **`3.1.1`** (API verified against it) | App targets latest **`3.1.2`**; re-verify version-sensitive bits (§3, §15). |
 | `MainActivity.cameraCoordinator` is the interface, swap by feature flag | Field is the **concrete** `RealCameraCaptureCoordinator`, and `onPermissionResult()` is called on it directly + `startDefaultCameraPreview()` | Widen the field to the interface and route `onPermissionResult` via `when` (§5.3). |
 | `CameraCaptureCoordinator.Callbacks` is top-level | It is a **nested** interface `CameraCaptureCoordinator.Callbacks` | Reference it correctly. |
 | Pass SRT URL via `StreamPackNativeConfig.currentSrtUrl()` | No such type; control is positional JNI with **no URL arg** | Add one new JNI upcall carrying a JSON config incl. `srtUrl` (§5.4), leave the legacy positional path untouched. |
@@ -110,7 +113,7 @@ Everything else in the draft (keep NativeActivity, keep Slint UI, don't pull
 ```toml
 [versions]
 # … existing …
-streampack = "3.1.1"   # matches draft/StreamPack-boilerplate
+streampack = "3.1.2"   # latest on Maven Central (boilerplate was 3.1.1)
 
 [libraries]
 # … existing …
@@ -144,7 +147,7 @@ dependencies {
 }
 ```
 
-> **minSdk note:** ours is `26`; the boilerplate is `24`. StreamPack 3.1.1 supports
+> **minSdk note:** ours is `26`; the boilerplate is `24`. StreamPack 3.1.x supports
 > `minSdk 24`, so no floor change is required.
 >
 > **ABI note:** we ship `arm64-v8a` only. StreamPack's `MediaCodec`/Camera2 usage is
@@ -995,8 +998,14 @@ Ownership split:
 
 ## 15. Open risks / things to confirm before coding
 
-- **`SingleStreamer` construction (3.1.1):** confirm the exact constructor/factory in
-  `draft/StreamPack-boilerplate/.../MainViewModelFactory.kt` (isolated in `newStreamer`).
+- **Version bump 3.1.1 → 3.1.2:** the API surface in this doc was read from the 3.1.1
+  boilerplate; the app pins the latest `3.1.2`. Re-confirm the version-sensitive call
+  sites against the 3.1.2 artifact before/at first compile: `SingleStreamer`
+  constructor/factory (isolated in `newStreamer`, cross-check
+  `draft/StreamPack-boilerplate/.../MainViewModelFactory.kt`), the `VideoConfig(... bitrate = ...)`
+  named parameter, and (Phase 2) the endpoint `Frame`/`IEndpointInternal` shape. If any
+  differ, the change is localized to `StreamPackSenderBridge` (Phase 1) or the endpoint
+  (Phase 2).
 - **Phase 2 endpoint API:** the boilerplate only uses built-in SRT/RTMP, so the
   `IEndpointInternal`/`Frame` field names in §7.1 must be read from the 3.1.1 sources
   (Maven artifact) before wiring.
