@@ -5,6 +5,11 @@
 #   ./scripts/build-deploy.sh              # debug build
 #   ./scripts/build-deploy.sh --release    # release build
 #   ./scripts/build-deploy.sh --no-install # build only, skip adb install
+#   ./scripts/build-deploy.sh --clean      # force cleanup of generated build outputs first
+#   ./scripts/build-deploy.sh --no-clean   # skip automatic low-disk cleanup
+#
+# Automatic cleanup runs when free disk space is below BUILD_DEPLOY_MIN_FREE_GB
+# (default: 10 GiB). It removes only generated build outputs.
 #
 # Prerequisites: run inside `nix develop .#android`.
 
@@ -16,25 +21,75 @@ cd "$PROJECT_ROOT"
 
 # ── Parse args ────────────────────────────────────────────────────────
 BUILD_TYPE="debug"
-CARGO_PROFILE=""
 GRADLE_TASK=":app:assembleDebug"
 DO_INSTALL=true
+CLEAN_MODE="auto"
+MIN_FREE_GB="${BUILD_DEPLOY_MIN_FREE_GB:-10}"
 
 for arg in "$@"; do
   case "$arg" in
     --release)
       BUILD_TYPE="release"
-      CARGO_PROFILE="--release"
       GRADLE_TASK=":app:assembleRelease"
       ;;
     --no-install)
       DO_INSTALL=false
+      ;;
+    --clean)
+      CLEAN_MODE="always"
+      ;;
+    --no-clean)
+      CLEAN_MODE="never"
+      ;;
+    --help|-h)
+      sed -n '2,15p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      echo "Run with --help for usage." >&2
+      exit 2
       ;;
   esac
 done
 
 # ── Preflight checks ─────────────────────────────────────────────────
 fail() { echo "✗ $1" >&2; exit 1; }
+
+case "$MIN_FREE_GB" in
+  ''|*[!0-9]*) fail "BUILD_DEPLOY_MIN_FREE_GB must be a whole number of GiB, got: $MIN_FREE_GB" ;;
+esac
+
+free_space_gb() {
+  df -Pk "$PROJECT_ROOT" | awk 'NR == 2 { printf "%d", $4 / 1024 / 1024 }'
+}
+
+remove_generated_path() {
+  local path="$1"
+  [ -e "$path" ] || return 0
+
+  local size
+  size=$(du -sh "$path" 2>/dev/null | awk '{ print $1 }' || true)
+  echo "  rm -rf ${path#$PROJECT_ROOT/}${size:+ ($size)}"
+  rm -rf "$path"
+}
+
+cleanup_generated_outputs() {
+  echo "▸ Cleaning generated build outputs to free disk space..."
+  remove_generated_path "$PROJECT_ROOT/app/build"
+  remove_generated_path "$PROJECT_ROOT/app/obj"
+  remove_generated_path "$PROJECT_ROOT/app/libs"
+  remove_generated_path "$PROJECT_ROOT/app/.cxx"
+  remove_generated_path "$PROJECT_ROOT/app/src/main/jniLibs"
+  remove_generated_path "$PROJECT_ROOT/build"
+  remove_generated_path "$PROJECT_ROOT/target"
+  remove_generated_path "$PROJECT_ROOT/.gradle"
+  remove_generated_path "$PROJECT_ROOT/.kotlin"
+
+  local after_gb
+  after_gb=$(free_space_gb)
+  echo "  Free space after cleanup: ${after_gb} GiB"
+}
 
 [ -n "${ANDROID_HOME:-}" ]              || fail "ANDROID_HOME not set. Run inside: nix develop .#android"
 [ -n "${ANDROID_NDK_ROOT:-}" ]          || fail "ANDROID_NDK_ROOT not set. Run inside: nix develop .#android"
@@ -46,6 +101,18 @@ command -v adb >/dev/null               || fail "adb not found"
 echo "┌──────────────────────────────────────────────────────┐"
 echo "│  Building fcast-android-sender ($BUILD_TYPE)              │"
 echo "└──────────────────────────────────────────────────────┘"
+
+FREE_GB=$(free_space_gb)
+if [ "$CLEAN_MODE" = "always" ]; then
+  cleanup_generated_outputs
+elif [ "$CLEAN_MODE" = "auto" ] && [ "$FREE_GB" -lt "$MIN_FREE_GB" ]; then
+  echo "⚠ Low disk space detected: ${FREE_GB} GiB free; threshold is ${MIN_FREE_GB} GiB."
+  cleanup_generated_outputs
+elif [ "$CLEAN_MODE" = "auto" ]; then
+  echo "▸ Disk space OK: ${FREE_GB} GiB free (cleanup threshold: ${MIN_FREE_GB} GiB)"
+else
+  echo "▸ Skipping build-output cleanup (--no-clean). Free space: ${FREE_GB} GiB"
+fi
 
 # ── Step 1: Build Rust native library with cargo-ndk ──────────────────
 # Delegate to the CI script so local and CI stay in lock-step. It pins
