@@ -155,13 +155,6 @@ class StreamPackSenderBridge(context: Context) {
         OrientationMode.AUTO -> Surface.ROTATION_0
     }
 
-    // Currently bypassed: start() uses the raw requested width/height to validate true
-    // 1920x1080 on-device. The 1088-padding green-edge artifact was specific to the legacy
-    // amcvidenc-via-appsrc path; StreamPack's Surface→MediaCodec path appears unaffected on
-    // the test device. Re-enable (and verify across devices) before shipping non-test builds.
-    @Suppress("unused")
-    private fun alignDown16(v: Int) = v - (v % 16)
-
     // Per-resolution ceiling for the adaptive bitrate range (also the encoder's initial
     // bitrate). The regulator floors at [maxVideoBitrate / 4, MIN_VIDEO_BITRATE_FLOOR].
     private fun defaultBitrate(w: Int, h: Int, fps: Int): Int = when {
