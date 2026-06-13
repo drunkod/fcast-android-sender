@@ -79,10 +79,11 @@ class StreamPackSenderBridge(context: Context) {
                             mimeType = MediaFormat.MIMETYPE_VIDEO_AVC,
                             resolution = Size(w, h),
                             fps = config.maxFps,
-                            // Initial/ceiling bitrate; the SRT adaptive-bitrate regulator
-                            // (attached below) moves the live video bitrate within
-                            // [minVideoBitrate, maxVideoBitrate] based on network conditions.
-                            bitrate = maxVideoBitrate,
+                            // Initial/ceiling bitrate (param is `startBitrate` in 3.1.2);
+                            // the SRT adaptive-bitrate regulator (attached below) moves the
+                            // live video bitrate within [minVideoBitrate, maxVideoBitrate]
+                            // based on network conditions.
+                            startBitrate = maxVideoBitrate,
                         )
                     )
                     streamer.setCameraId(cameraIdFor(config.cameraIdx))
