@@ -1,7 +1,7 @@
 # Task 16 — Set up cross-compilation pipeline for `gst-plugins-rs`
 
 - **Priority:** P3 (Low — optimization and future-proofing)
-- **Source:** [../TODO.codecs.md §16](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §16
 
 ## Tasks
 

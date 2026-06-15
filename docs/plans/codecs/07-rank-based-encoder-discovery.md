@@ -1,7 +1,7 @@
 # Task 7 — Implement rank-based encoder/decoder discovery
 
 - **Priority:** P2 (Medium — robustness and quality)
-- **Source:** [../TODO.codecs.md §7](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §7
 - **File:** `senders/android/src/migration/nodes/destination.rs`
 
 ## Tasks

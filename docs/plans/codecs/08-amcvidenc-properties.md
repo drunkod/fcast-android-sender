@@ -1,7 +1,7 @@
 # Task 8 — Handle `amcvidenc` bitrate and keyframe properties
 
 - **Priority:** P2 (Medium — robustness and quality)
-- **Source:** [../TODO.codecs.md §8](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §8
 - **File:** `senders/android/src/migration/nodes/destination.rs`
 - **Function:** `select_video_encoder()` and callers
 

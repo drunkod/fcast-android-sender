@@ -1,7 +1,7 @@
 # Task 2 — Handle `rtmp2sink` absence for RTMP destinations
 
 - **Priority:** P0 (Critical — app crashes / features completely broken)
-- **Source:** [../TODO.codecs.md §2](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §2
 - **File:** `senders/android/src/migration/nodes/destination.rs`
 - **Function:** `build_live_pipeline()` → `DestinationFamily::Rtmp` arm
 - **Approx. lines:** ~200-260

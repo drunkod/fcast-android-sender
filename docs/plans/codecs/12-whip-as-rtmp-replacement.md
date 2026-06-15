@@ -1,7 +1,7 @@
 # Task 12 — Evaluate WebRTC/WHIP as RTMP replacement
 
 - **Priority:** P3 (Low — optimization and future-proofing)
-- **Source:** [../TODO.codecs.md §12](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §12
 - **File:** `senders/android/src/migration/nodes/destination.rs`
 
 ## Tasks

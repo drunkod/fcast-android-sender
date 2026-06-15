@@ -1,7 +1,7 @@
 # Task 13 — Implement zero-copy video frame path
 
 - **Priority:** P3 (Low — optimization and future-proofing)
-- **Source:** [../TODO.codecs.md §13](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §13
 - **File:** `senders/android/src/lib.rs`
 - **Function:** `process_frame()`
 

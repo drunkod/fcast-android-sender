@@ -1,7 +1,7 @@
 # Task 1 — Replace H.264 software encoder fallback chain with Android MediaCodec
 
 - **Priority:** P0 (Critical — app crashes / features completely broken)
-- **Source:** [../TODO.codecs.md §1](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §1
 - **File:** `senders/android/src/migration/nodes/destination.rs`
 - **Function:** `select_video_encoder()`
 - **Approx. lines:** ~155-170

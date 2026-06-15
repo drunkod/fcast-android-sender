@@ -1,7 +1,7 @@
 # Task 6 — Register Rust-compiled GStreamer plugins via JNI
 
 - **Priority:** P1 (High — functional gap, will be hit in production)
-- **Source:** [../TODO.codecs.md §6](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §6
 - **File:** new file needed — e.g. `senders/android/src/migration/gst_registration.rs`
 
 ## Problem

@@ -1,7 +1,7 @@
 # Task 4 — Add `videoconvert` color space negotiation before hardware encoders
 
 - **Priority:** P1 (High — functional gap, will be hit in production)
-- **Source:** [../TODO.codecs.md §4](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §4
 - **File:** `senders/android/src/migration/nodes/destination.rs`
 - **All encoder-using arms:** RTMP, UDP, LocalFile
 

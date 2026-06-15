@@ -1,7 +1,7 @@
 # Task 15 — Add `#[cfg(target_os = "android")]` gating throughout
 
 - **Priority:** P3 (Low — optimization and future-proofing)
-- **Source:** [../TODO.codecs.md §15](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §15
 - **Files:** all node files (`senders/android/src/migration/nodes/*.rs`)
 
 ## Tasks

@@ -1,7 +1,7 @@
 # Task 14 — Minimize APK size from static Rust linking
 
 - **Priority:** P3 (Low — optimization and future-proofing)
-- **Source:** [../TODO.codecs.md §14](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §14
 
 ## Tasks
 

@@ -1,7 +1,7 @@
 # Task 17 — Add element availability integration tests
 
 - **Priority:** P3 (Low — optimization and future-proofing)
-- **Source:** [../TODO.codecs.md §17](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §17
 - **File:** new — e.g. `senders/android/tests/gst_elements.rs` or extend
   existing tests.
 

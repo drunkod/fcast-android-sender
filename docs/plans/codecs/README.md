@@ -1,12 +1,12 @@
 # GStreamer Android Prebuilt SDK Compatibility — Task Index
 
 This directory contains the per-task breakdown of
-[`../TODO.codecs.md`](../TODO.codecs.md). Each task in the original document
+`TODO.codecs.md`. Each task in the original document
 has been split into its own TODO file so it can be worked on, assigned, and
 tracked independently.
 
 The source-of-truth task descriptions and code snippets remain in
-`../TODO.codecs.md`; the files here are scoped, self-contained checklists for
+`TODO.codecs.md`; the files here are scoped, self-contained checklists for
 each individual unit of work.
 
 All tasks relate to the migration code under

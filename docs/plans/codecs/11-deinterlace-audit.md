@@ -1,7 +1,7 @@
 # Task 11 — Audit `deinterlace` element usage
 
 - **Priority:** P2 (Medium — robustness and quality)
-- **Source:** [../TODO.codecs.md §11](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §11
 - **Files:**
   - `senders/android/src/migration/nodes/source.rs`
   - `senders/android/src/migration/nodes/video_generator.rs`

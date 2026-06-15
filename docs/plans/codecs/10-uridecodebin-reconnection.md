@@ -1,7 +1,7 @@
 # Task 10 — Add stream reconnection for `uridecodebin` fallback path
 
 - **Priority:** P2 (Medium — robustness and quality)
-- **Source:** [../TODO.codecs.md §10](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §10
 - **File:** `senders/android/src/migration/nodes/source.rs`
 - **Function:** `poll_bus_messages()`
 

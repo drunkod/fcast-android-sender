@@ -1,7 +1,7 @@
 # Task 5 — Validate all GStreamer elements exist at startup
 
 - **Priority:** P1 (High — functional gap, will be hit in production)
-- **Source:** [../TODO.codecs.md §5](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §5
 - **File:** `senders/android/src/migration/runtime.rs`
 - **Function:** `start_graph_runtime()`
 

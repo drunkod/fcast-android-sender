@@ -1,7 +1,7 @@
 # Task 9 — Handle `timecodestamper` / `timeoverlay` availability
 
 - **Priority:** P2 (Medium — robustness and quality)
-- **Source:** [../TODO.codecs.md §9](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §9
 - **File:** `senders/android/src/migration/nodes/destination.rs`
 - **Section:** RTMP arm
 

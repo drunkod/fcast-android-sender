@@ -1,7 +1,7 @@
 # Task 3 — Handle `fallbacksrc` absence gracefully
 
 - **Priority:** P0 (Critical — app crashes / features completely broken)
-- **Source:** [../TODO.codecs.md §3](../TODO.codecs.md)
+- **Source:** TODO.codecs.md §3
 - **File:** `senders/android/src/migration/nodes/source.rs`
 - **Function:** `build_source_element()`
 - **Approx. lines:** ~80-105
