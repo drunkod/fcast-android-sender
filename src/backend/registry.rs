@@ -1,7 +1,7 @@
 //! Backend registry — owns the chosen MediaBackend for each kind.
 //!
 //! Replaces the previous process-global BACKEND: Lazy<RwLock<…>>; see
-//! docs/refactor-implementation-guide/05-composition-root-and-interfaces/.
+//! docs/archive/refactor-implementation-guide/05-composition-root-and-interfaces/.
 
 use std::sync::Arc;
 

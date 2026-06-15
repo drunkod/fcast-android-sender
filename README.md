@@ -1,9 +1,26 @@
 # fcast-android-sender
 
+[![Android Debug APK](https://github.com/kodyka/fcast-android-sender/actions/workflows/android-debug-apk.yml/badge.svg)](https://github.com/kodyka/fcast-android-sender/actions/workflows/android-debug-apk.yml)
+[![Android Release APK](https://github.com/kodyka/fcast-android-sender/actions/workflows/android-release-apk.yml/badge.svg)](https://github.com/kodyka/fcast-android-sender/actions/workflows/android-release-apk.yml)
+[![UI Lint](https://github.com/kodyka/fcast-android-sender/actions/workflows/ui-lint.yml/badge.svg)](https://github.com/kodyka/fcast-android-sender/actions/workflows/ui-lint.yml)
+
 Standalone Android sender app for the [FCast protocol](https://github.com/kodyka/fcast).
+A thin Kotlin/Android shell hosts a Rust core (`fcastsender`, a `cdylib`) that
+drives a Slint UI and a GStreamer/WebRTC media pipeline over a JNI boundary:
+screen- or camera-captured video is encoded via GStreamer and streamed to FCast
+receivers over WHEP/WebRTC (or RTMP).
 
 Extracted from `kodyka/fcast` at commit `63980e6736e65adbd15588d21903d0c02223c15c`
 via MVP phase 10.
+
+## Architecture
+
+See [docs/architecture/overview.md](docs/architecture/overview.md) for the layered
+diagram and [ARCHITECTURE.md](ARCHITECTURE.md) for the full Mermaid graph. In
+short: Android shell (Kotlin/Java) → JNI boundary (`src/lib.rs`) → Rust core
+(`app.rs`, backend registry) → workspace crates (`gstpop-runtime`,
+`migration-runtime`) → GStreamer/WHEP → FCast receiver, with a Slint UI bound via
+the `Bridge` global.
 
 ## Building
 
@@ -11,9 +28,12 @@ The Android build still expects the same toolchain components the monorepo used:
 
 - Rust toolchain with Android targets
 - Android SDK command-line tools
-- Android NDK r25c
+- Android NDK r28c (`28.0.13004108`, pinned in `flake.nix`)
 - GStreamer Android SDK 1.28.0
 - Java 21
+
+> The NDK version is single-sourced from `flake.nix`. `scripts/check-repo-layout.sh`
+> fails CI if this README and `flake.nix` disagree.
 
 ## Flake-based local setup (recommended)
 
@@ -96,7 +116,7 @@ $ adb logcat | grep -i fcast
 
 | Variable | Purpose |
 | --- | --- |
-| `ANDROID_NDK_ROOT` or `ANDROID_NDK_HOME` | Path to Android NDK r25c |
+| `ANDROID_NDK_ROOT` or `ANDROID_NDK_HOME` | Path to Android NDK r28c (`28.0.13004108`) |
 | `GSTREAMER_ROOT_ANDROID` | Path to GStreamer Android SDK 1.28.0 |
 
 For Gradle builds, also export:
@@ -126,13 +146,17 @@ builds.
 
 ## Repository layout
 
-- `Cargo.toml`, `build.rs`, `src/`: `android-sender` Rust crate
-- `ui/`: Slint UI tree
-- `ui/components/mcore/`, `ui/components/std/`: vendored Slint helpers copied from `kodyka/fcast`
-- `app/`: Android shell, JNI glue, resources
-- `ci/`: UI validation script
-- `gradle/`, `gradlew*`, `build.gradle`, `settings.gradle`: Gradle project
-- `docs/`: extraction and cross-repo maintenance docs
+| Path | Description |
+|------|-------------|
+| `src/` | Main Rust crate `android-sender` — JNI exports, app logic, backends |
+| `crates/` | Internal Rust runtimes: `migration-runtime`, `gstpop-runtime` |
+| `ui/` | Slint UI tree: `main.slint`, `bridge.slint`, pages, components, theme, i18n |
+| `app/` | Android Gradle module: Kotlin/Java shell, JNI glue, manifest, resources |
+| `ci/` | CI build + UI validation scripts, JNI symbol baseline |
+| `scripts/` | Developer helpers (`build-deploy`, smoke tests, slint-viewer checks) |
+| `tests/` | Headless UI snapshot tests |
+| `vendor/` | Vendored `gstpop` crate |
+| `docs/` | Documentation — start at [docs/README.md](docs/README.md) |
 
 ## SDK dependencies
 
@@ -195,6 +219,24 @@ To refresh accessibility golden files if they legitimately changed:
 ```console
 $ UI_SNAPSHOT_REFRESH=1 cargo test --test ui_snapshots
 ```
+
+## CI/CD
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `android-debug-apk` | push, PR | UI audit + arm64 debug APK + JVM unit tests |
+| `android-release-apk` | release published, manual | Signed release APK attached to the GitHub Release |
+| `android-instrumented-tests` | PR (`app/src` changes), nightly | Emulator-based instrumented tests |
+| `symbol-stability` | PR (`src`/`crates`/`app` changes) | JNI symbol baseline diff |
+| `ui-lint` | PR (`ui/` changes) | Forbid raw hex colors, hardcoded sizes, direct state writes |
+| `slint-viewer-smoke` | PR (`ui/` changes) | Compile `ui/main.slint` with `slint-viewer` |
+| `gstpop-smoke` | push, PR (`src`/`ui`/`ci` changes) | gst-pop backend integration tests |
+| `repo-health` | push, PR (docs/scripts/README) | Layout drift + shellcheck + link check |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, hooks, branch/PR conventions,
+and the test matrix. Security reports: [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -2,7 +2,7 @@
 //! the JNI bootstrap entry and accessed via [`app`].
 //!
 //! Replaces the process-global `BACKEND: Lazy<RwLock<…>>`; see
-//! docs/refactor-implementation-guide/05-composition-root-and-interfaces/.
+//! docs/archive/refactor-implementation-guide/05-composition-root-and-interfaces/.
 
 use std::sync::Arc;
 
