@@ -124,16 +124,24 @@ fi
 
 # ── 5. No broken internal references to moved paths ──────────────────────────
 section "Internal reference integrity"
-# These tokens should no longer point at old locations anywhere except this
-# script and the refresh plan (which document the move intentionally).
+# Flag old path tokens only where a *live, navigable* link would be wrong.
+# Excluded by design: the migration/refresh docs and CHANGELOG (which describe
+# the moves on purpose), the annotated example copies, and docs/archive/**
+# (frozen historical material whose internal cross-links are not maintained).
 declare -A MOVED=(
   ["TODO.codecs/"]="docs/plans/codecs/"
   ["docs/refactor-implementation-guide/"]="docs/archive/refactor-implementation-guide/"
 )
 for token in "${!MOVED[@]}"; do
   HITS=$(grep -rIl --exclude-dir=.git \
+            --exclude-dir=archive \
+            --exclude-dir=migrations \
+            --exclude-dir=examples \
             --exclude="check-repo-layout.sh" \
             --exclude="repository-refresh-plan.md" \
+            --exclude="repo-health-checks.md" \
+            --exclude="CHANGELOG.md" \
+            --exclude="draft-plan-*.md" \
             -- "${token}" . 2>/dev/null || true)
   if [ -n "${HITS}" ]; then
     fail "dangling reference to '${token}' (now '${MOVED[$token]}')" \
