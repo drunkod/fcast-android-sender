@@ -9,7 +9,7 @@
 > version-sensitive bits (`SingleStreamer` construction, `VideoConfig.bitrate`, endpoint
 > `Frame`) on the bump; see §15.
 >
-> Source research: [`docs/draft-plan-to-surface-streampack.md`](./draft-plan-to-surface-streampack.md).
+> Source research: [`draft-plan-to-surface-streampack.md`](../archive/draft-plans/draft-plan-to-surface-streampack.md).
 > This document supersedes the draft where the draft drifted from the real code
 > (corrections are called out explicitly in **§2 Reality check**).
 >

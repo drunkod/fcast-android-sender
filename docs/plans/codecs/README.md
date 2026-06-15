@@ -10,9 +10,9 @@ The source-of-truth task descriptions and code snippets remain in
 each individual unit of work.
 
 All tasks relate to the migration code under
-[`../src/migration/`](../src/migration/) — primarily the nodes in
-`src/migration/nodes/` (`destination.rs`, `source.rs`, `mixer.rs`,
-`video_generator.rs`) and the runtime in `src/migration/runtime.rs`.
+[`crates/migration-runtime/src/`](../../../crates/migration-runtime/src/) — primarily the
+nodes in `crates/migration-runtime/src/nodes/` and the runtime in
+`crates/migration-runtime/src/runtime.rs`.
 
 ## Summary Matrix
 

@@ -102,4 +102,4 @@ Manual walkthrough:
 **Squash rule:** Steps 1 + 2 + 3 land in one commit (exhaustive `match`).
 Steps 4–8 are independent and can land separately.
 
-Next milestone: [v0.2.0 — Scene System + Basic Widgets](../../../draft/moblin-fcast-version-map.md#v020--scene-system--basic-widgets)
+Next milestone: [v0.2.0 — Scene System + Basic Widgets](../../../../draft/moblin-fcast-version-map.md#v020--scene-system--basic-widgets)
