@@ -1,3 +1,4 @@
+# NOTE: moved to ci/legacy-gitlab-ci.yml during the 2026 repo refresh.
 # DEPRECATED: kept for rollback until two consecutive GitHub-driven releases
 # ship successfully. Do not extend.
 #
