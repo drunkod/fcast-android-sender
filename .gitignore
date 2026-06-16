@@ -20,3 +20,9 @@ gst-android-build/
 draft/gstpop/
 draft/moblin/
 .slint-viewer-cache/
+
+# Graphify local/generated files
+.graphify-src/
+graphify-out/
+.venv/
+venv/
