@@ -52,7 +52,7 @@ the README — no Android toolchain, so it finishes in well under a minute:
 |---|---|
 | `layout` | Runs `scripts/check-repo-layout.sh` |
 | `shellcheck` | Lints every `scripts/*.sh` and `ci/*.sh` at `--severity=warning` |
-| `markdown-links` | Fails on broken repo-relative `[text](path)` Markdown links |
+| `markdown-links` | Fails on broken repo-relative Markdown links |
 
 ## Failure policy
 

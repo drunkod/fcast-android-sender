@@ -504,7 +504,7 @@ phase by phase; flip CI to hard-fail once Phase 8 passes.
 
 - **layout** — runs `check-repo-layout.sh`.
 - **shellcheck** — lints every `scripts/*.sh` and `ci/*.sh` at `--severity=warning`.
-- **markdown-links** — fails on broken repo-relative `[text](path)` links.
+- **markdown-links** — fails on broken repo-relative links.
 
 It needs no Android toolchain, so it returns in well under a minute.
 

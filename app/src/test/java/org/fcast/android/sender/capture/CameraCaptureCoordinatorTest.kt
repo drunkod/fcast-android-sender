@@ -35,20 +35,22 @@ class CameraCaptureCoordinatorTest {
         var started = false
         var shutdownCalled = false
         var startConfig: CameraCaptureConfig? = null
-        var onStartedCallback: ((Int, Int) -> Unit)? = null
+        var onStartedCallback: ((Int, Int, Int) -> Unit)? = null
         var onFatalErrorCallback: ((String) -> Unit)? = null
 
         override fun start(
             context: Context,
             config: CameraCaptureConfig,
-            onStarted: (Int, Int) -> Unit,
+            previewSurface: android.view.Surface?,
+            captureFrames: Boolean,
+            onStarted: (Int, Int, Int) -> Unit,
             onFatalError: (String) -> Unit
         ) {
             started = true
             startConfig = config
             onStartedCallback = onStarted
             onFatalErrorCallback = onFatalError
-            onStarted(config.width, config.height)
+            onStarted(config.width, config.height, 0)
         }
 
         override fun shutdown() {
@@ -60,6 +62,7 @@ class CameraCaptureCoordinatorTest {
         var permissionNeededCalled = false
         var startedWidth = 0
         var startedHeight = 0
+        var startedRotationDeg = 0
         var stoppedCalled = false
         var failedReason: String? = null
 
@@ -67,9 +70,10 @@ class CameraCaptureCoordinatorTest {
             permissionNeededCalled = true
         }
 
-        override fun onCameraCaptureStarted(width: Int, height: Int) {
+        override fun onCameraCaptureStarted(width: Int, height: Int, rotationDeg: Int) {
             startedWidth = width
             startedHeight = height
+            startedRotationDeg = rotationDeg
         }
 
         override fun onCameraCaptureStopped() {

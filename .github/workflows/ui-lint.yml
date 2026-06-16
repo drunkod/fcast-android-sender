@@ -40,11 +40,11 @@ jobs:
         # Navigation must go through PanelBridge.push / .pop / .replace.
         run: |
           set -euo pipefail
-          ! git grep -nE 'Bridge\.active-panel\s*=' -- 'ui/'
+          ! git grep -nE 'Bridge\.active-panel\s*=[^=]' -- 'ui/'
 
       - name: Forbid setting Bridge.lifecycle directly
         # Lifecycle transitions must call Bridge.exit-lifecycle() or
         # Bridge.engage-lock / engage-stealth / start-snapshot-countdown.
         run: |
           set -euo pipefail
-          ! git grep -nE 'Bridge\.lifecycle\s*=' -- 'ui/'
+          ! git grep -nE 'Bridge\.lifecycle\s*=[^=]' -- 'ui/'
