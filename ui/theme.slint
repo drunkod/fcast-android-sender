@@ -18,6 +18,7 @@ export global Theme {
     out property <color> text-disabled:    Tokens.color-muted-foreground;
     out property <color> text-on-accent:   Tokens.color-primary-foreground;
     out property <color> text-on-error:    Tokens.color-primary-foreground;
+    out property <color> text-inverse:     #ffffff;
 
     // ── Accent / interactive ──────────────────────────────────────────────
     out property <color> accent:           Tokens.color-primary;
@@ -40,7 +41,14 @@ export global Theme {
     out property <color> error-fg:         #ef4444;   // fg/text (bright red)
     out property <color> warning:          #ed6c02;   // bg fill (dark amber)
     out property <color> warning-fg:       #ed6c02;   // fg/text (bright orange)
+    out property <color> warning-bright-fg: #fbbf24;  // fg/text (bright yellow)
+    out property <color> warning-muted-fg: #fde68a;   // fg/text (muted yellow)
     out property <color> success:          #2e7d32;   // bg fill (dark green)
+    out property <color> success-fg:       #22c55e;   // fg/text (bright green)
+    out property <color> success-soft:     #16a34a33; // status pill background
+    out property <color> warning-soft:     #d9770633; // status pill background
+    out property <color> error-soft:       #dc262633; // status pill background
+    out property <color> error-muted-fg:   #fca5a5;   // fg/text on error surface
     // Paired token for the record button — avoids #cc0000 inline.
     out property <color> recording-dot:    #cc0000;
 
@@ -49,6 +57,9 @@ export global Theme {
     out property <length> font-size-body:     12pt;
     out property <length> font-size-heading:  15pt;
     out property <length> font-size-icon:     11pt;  // icon badge symbol (was 14px)
+    out property <length> font-size-badge-icon: 8pt;
+    out property <length> font-size-badge-label: 9pt;
+    out property <length> font-size-control-icon: 20pt;
     // Larger sizes used by overlays.
     out property <length> font-size-display:  36pt;  // lock icon (was 48px)
     out property <length> font-size-hero:     54pt;  // countdown number (was 72px)
@@ -78,6 +89,15 @@ export global Theme {
 
     // ── Icon badge backgrounds ────────────────────────────────────────────
     out property <color> icon-bg-neutral:  #374151;
+
+    // ── Ad hoc controls ───────────────────────────────────────────────────
+    out property <color> neutral-overlay:   #37415180;
+    out property <color> segment-selected:  #99999966;
+    out property <color> segment-border:    #888888;
+    out property <color> empty-state-bg:    #ffffff0d;
+    out property <color> row-normal:        #1e2535;
+    out property <color> row-pressed:       #2a3347;
+    out property <color> row-divider:       #3a4154;
 
     // ── Debug log level colors ────────────────────────────────────────────
     out property <color> log-trace:   #888888;

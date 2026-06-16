@@ -5,7 +5,7 @@
 //   StreamOverlayRightView.swift → StreamRightBadges
 //
 // Visual language (Moblin):
-//   backgroundColor = Color.black.opacity(0.4) → #00000066
+//   backgroundColor = Color.black.opacity(0.4)
 //   cornerRadius = 5px
 //   font: 12px semibold white
 //   status dot: ● colored per severity / connection state
@@ -17,13 +17,13 @@ import { Theme } from "../theme.slint";
 // ── Primitive: one dark translucent pill ──────────────────────────────────────
 component StreamBadge inherits Rectangle {
     in property <string> icon: "";
-    in property <color>  icon-color: #ffffff;
+    in property <color>  icon-color: Theme.text-inverse;
     in property <string> label;
-    in property <color>  label-color: #ffffff;
+    in property <color>  label-color: Theme.text-inverse;
 
     height: 26px;
     border-radius: 5px;
-    background: #00000066;
+    background: Theme.surface-black.with-alpha(0.4);
 
     HorizontalLayout {
         padding-left: 6px;
@@ -33,7 +33,7 @@ component StreamBadge inherits Rectangle {
         if root.icon != "": Text {
             text:  root.icon;
             color: root.icon-color;
-            font-size: 11px;
+            font-size: Theme.font-size-badge-icon;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -41,7 +41,7 @@ component StreamBadge inherits Rectangle {
         Text {
             text:  root.label;
             color: root.label-color;
-            font-size: 12px;
+            font-size: Theme.font-size-badge-label;
             font-weight: 600;
             vertical-alignment: center;
         }
@@ -79,10 +79,10 @@ export component StreamLeftOverlay inherits Rectangle {
             StreamBadge {
                 icon: "●";
                 icon-color:
-                    Bridge.app-state == AppState.Casting         ? #22c55e
-                  : Bridge.app-state == AppState.Connecting      ? #f59e0b
-                  : Bridge.app-state == AppState.WaitingForMedia ? #f59e0b
-                  :                                                #ef4444;
+                    Bridge.app-state == AppState.Casting         ? Theme.success-fg
+                  : Bridge.app-state == AppState.Connecting      ? Theme.warning-bright-fg
+                  : Bridge.app-state == AppState.WaitingForMedia ? Theme.warning-bright-fg
+                  :                                                Theme.error-fg;
                 label:
                     Bridge.app-state == AppState.Casting            ? @tr("Live")
                   : Bridge.app-state == AppState.Connecting         ? @tr("Connecting")
@@ -117,15 +117,15 @@ export component StreamRightBadges inherits Rectangle {
                 icon: item.severity == StatusSeverity.error   ? "●"
                     : item.severity == StatusSeverity.warning ? "●"
                     :                                           "";
-                icon-color: item.severity == StatusSeverity.error   ? #ef4444
-                          : item.severity == StatusSeverity.warning ? #fbbf24
-                          :                                           #ffffff;
+                icon-color: item.severity == StatusSeverity.error   ? Theme.error-fg
+                          : item.severity == StatusSeverity.warning ? Theme.warning-bright-fg
+                          :                                           Theme.text-inverse;
                 label: item.label == "" ? item.value
                      : item.value == "" ? item.label
                      :                    item.label + ": " + item.value;
-                label-color: item.severity == StatusSeverity.error   ? #fca5a5
-                           : item.severity == StatusSeverity.warning ? #fde68a
-                           :                                           #ffffff;
+                label-color: item.severity == StatusSeverity.error   ? Theme.error-muted-fg
+                           : item.severity == StatusSeverity.warning ? Theme.warning-muted-fg
+                           :                                           Theme.text-inverse;
             }
         }
     }

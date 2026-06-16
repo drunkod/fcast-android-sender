@@ -544,7 +544,7 @@ suffix), or temporarily remove the cache step.
 In this repo:
 
 - [`tests/ui_snapshots.rs`](../tests/ui_snapshots.rs) — the canonical test file. Every example here is a real scope inside it.
-- [`docs/ui-slint-best-practices/14-testing-and-validation.md`](./ui-slint-best-practices/14-testing-and-validation.md) — the migration step that added these tests; design rationale.
+- [`docs/guides/ui-slint-best-practices/14-testing-and-validation.md`](./guides/ui-slint-best-practices/14-testing-and-validation.md) — the migration step that added these tests; design rationale.
 - [`scripts/check-slint-viewer.sh`](../scripts/check-slint-viewer.sh) — version gating for the local `slint-viewer`.
 
 Upstream Slint:

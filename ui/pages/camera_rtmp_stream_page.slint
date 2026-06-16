@@ -39,10 +39,10 @@ component StreamStatePill inherits Rectangle {
 
     height: 28px;
     border-radius: Theme.radius-circle;
-    background: root.is-live  ? #16a34a33
-              : root.is-busy  ? #d9770633
-              : root.is-error ? #dc262633
-              :                 #37415180;
+    background: root.is-live  ? Theme.success-soft
+              : root.is-busy  ? Theme.warning-soft
+              : root.is-error ? Theme.error-soft
+              :                 Theme.neutral-overlay;
 
     HorizontalLayout {
         padding-left: Theme.padding-card;
@@ -52,9 +52,9 @@ component StreamStatePill inherits Rectangle {
 
         if root.is-live || root.is-error || root.is-busy: Text {
             text: "●";
-            color: root.is-live  ? #22c55e
-                 : root.is-error ? #ef4444
-                 :                 #f59e0b;
+            color: root.is-live  ? Theme.success-fg
+                 : root.is-error ? Theme.error-fg
+                 :                 Theme.warning-bright-fg;
             font-size: 6pt;
             vertical-alignment: center;
         }
@@ -64,8 +64,8 @@ component StreamStatePill inherits Rectangle {
                 : root.state == MixerState.stopping    ? @tr("Stopping…")
                 : root.is-error                        ? @tr("Error")
                 :                                        @tr("Idle");
-            color: root.is-live  ? #22c55e
-                 : root.is-error ? #ef4444
+            color: root.is-live  ? Theme.success-fg
+                 : root.is-error ? Theme.error-fg
                  :                 Theme.text-secondary;
             font-size: Theme.font-size-label;
             font-weight: 700;
@@ -133,15 +133,15 @@ component ZoomPresetBar inherits Rectangle {
             horizontal-stretch: 1;
         }
 
-        // Segmented picker — background #000000 at 40% opacity, border gray.
+        // Segmented picker uses a translucent black fill and gray border.
         // Matches Moblin: pickerBackgroundColor = .black.opacity(0.4), pickerBorderColor = .gray
         Rectangle {
             height: 36px;
             width: 200px;
             border-radius: Theme.radius-card;
-            background: #00000066;
+            background: Theme.surface-black.with-alpha(0.4);
             border-width: 1px;
-            border-color: #888888;
+            border-color: Theme.segment-border;
             clip: true;
 
             HorizontalLayout {
@@ -150,7 +150,7 @@ component ZoomPresetBar inherits Rectangle {
                 // ×0.5
                 Rectangle {
                     horizontal-stretch: 1;
-                    background: Bridge.camera-zoom-level < 0.75 ? #99999966 : transparent;
+                    background: Bridge.camera-zoom-level < 0.75 ? Theme.segment-selected : transparent;
                     TouchArea {
                         clicked => {
                             Bridge.camera-zoom-level = 0.5;
@@ -169,14 +169,14 @@ component ZoomPresetBar inherits Rectangle {
 
                 Rectangle {
                     width: 1px;
-                    background: #888888;
+                    background: Theme.segment-border;
                 }
 
                 // ×1
                 Rectangle {
                     horizontal-stretch: 1;
                     background: Bridge.camera-zoom-level >= 0.75 && Bridge.camera-zoom-level < 1.5
-                        ? #99999966 : transparent;
+                        ? Theme.segment-selected : transparent;
                     TouchArea {
                         clicked => {
                             Bridge.camera-zoom-level = 1.0;
@@ -195,14 +195,14 @@ component ZoomPresetBar inherits Rectangle {
 
                 Rectangle {
                     width: 1px;
-                    background: #888888;
+                    background: Theme.segment-border;
                 }
 
                 // ×2
                 Rectangle {
                     horizontal-stretch: 1;
                     background: Bridge.camera-zoom-level >= 1.5 && Bridge.camera-zoom-level < 2.5
-                        ? #99999966 : transparent;
+                        ? Theme.segment-selected : transparent;
                     TouchArea {
                         clicked => {
                             Bridge.camera-zoom-level = 2.0;
@@ -221,13 +221,13 @@ component ZoomPresetBar inherits Rectangle {
 
                 Rectangle {
                     width: 1px;
-                    background: #888888;
+                    background: Theme.segment-border;
                 }
 
                 // ×3
                 Rectangle {
                     horizontal-stretch: 1;
-                    background: Bridge.camera-zoom-level >= 2.5 ? #99999966 : transparent;
+                    background: Bridge.camera-zoom-level >= 2.5 ? Theme.segment-selected : transparent;
                     TouchArea {
                         clicked => {
                             Bridge.camera-zoom-level = 3.0;
@@ -296,7 +296,7 @@ export component CameraRtmpStreamPage inherits Rectangle {
                             alignment: center;
                             Text {
                                 text: "⚠";
-                                color: #fca5a5;
+                                color: Theme.error-muted-fg;
                                 font-size: Theme.font-size-icon;
                                 vertical-alignment: center;
                             }
@@ -322,7 +322,7 @@ export component CameraRtmpStreamPage inherits Rectangle {
                             padding: Theme.padding-screen;
                             Text {
                                 text: "📷";
-                                color: #16a34a;
+                                color: Theme.success;
                                 font-size: 24pt;
                                 horizontal-alignment: center;
                             }

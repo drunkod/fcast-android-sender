@@ -1,0 +1,102 @@
+name: Repo Health
+
+# Guards against repository-layout drift after the structure refresh:
+# runs the layout checker, lints shell scripts, and detects broken internal
+# Markdown links. Fast, no Android toolchain required.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "docs/**"
+      - "draft/**"
+      - "scripts/**"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "CHANGELOG.md"
+      - "SECURITY.md"
+      - ".gitignore"
+      - "flake.nix"
+      - ".github/workflows/repo-health.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repo-health-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  layout:
+    name: Layout & consistency
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run repo-layout checks
+        run: bash scripts/check-repo-layout.sh
+
+  shellcheck:
+    name: Shellcheck scripts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Lint shell scripts
+        run: |
+          set -euo pipefail
+          mapfile -t scripts < <(find scripts ci -name '*.sh' -type f 2>/dev/null | sort)
+          if [ "${#scripts[@]}" -eq 0 ]; then
+            echo "no shell scripts found"; exit 0
+          fi
+          printf 'linting %d scripts\n' "${#scripts[@]}"
+          shellcheck --severity=warning "${scripts[@]}"
+
+  markdown-links:
+    name: Internal link check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check relative Markdown links resolve
+        run: |
+          set -euo pipefail
+          fail=0
+          # Extract [text](path) links that are repo-relative (not http, not anchors).
+          while IFS= read -r md; do
+            dir="$(dirname "$md")"
+            grep -oE '\]\(([^)#]+)' "$md" | sed -E 's/^\]\(//' | while IFS= read -r link; do
+              case "$link" in
+                http://*|https://*|mailto:*|"#"*|"") continue ;;
+              esac
+              target="${link%%#*}"
+              if [ ! -e "${dir}/${target}" ] && [ ! -e "${target}" ]; then
+                echo "BROKEN: ${md} -> ${link}"
+                fail=1
+              fi
+            done
+          done < <(git ls-files '*.md' ':(exclude)draft/**' ':(exclude)docs/archive/**' ':(exclude)docs/guides/ui-slint-best-practices/**')
+          # 'while' runs in a subshell via pipe; re-derive failure from a marker grep.
+          # Scope: skip draft/** (scratch), docs/archive/** (frozen historical),
+          # and docs/guides/ui-slint-best-practices/** pending a follow-up rewrite
+          # away from deleted vendored Slint mirror links.
+          if git ls-files '*.md' ':(exclude)draft/**' ':(exclude)docs/archive/**' ':(exclude)docs/guides/ui-slint-best-practices/**' | while IFS= read -r md; do
+              dir="$(dirname "$md")"
+              grep -oE '\]\(([^)#]+)' "$md" | sed -E 's/^\]\(//' | while IFS= read -r link; do
+                case "$link" in http://*|https://*|mailto:*|"#"*|"") continue ;; esac
+                target="${link%%#*}"
+                if [ ! -e "${dir}/${target}" ] && [ ! -e "${target}" ]; then echo broken; fi
+              done
+            done | grep -q broken; then
+            echo "::error::Broken internal Markdown links detected (see log above)"
+            exit 1
+          fi
+          echo "All internal Markdown links resolve."
