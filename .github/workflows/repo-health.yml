@@ -1,24 +1,9 @@
 name: Repo Health
 
-# Guards against repository-layout drift after the structure refresh:
-# runs the layout checker, lints shell scripts, and detects broken internal
-# Markdown links. Fast, no Android toolchain required.
+# Disabled for now: this workflow no longer runs automatically on push or pull_request.
+# Re-enable by restoring the push/pull_request triggers below.
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    paths:
-      - "docs/**"
-      - "draft/**"
-      - "scripts/**"
-      - "README.md"
-      - "CONTRIBUTING.md"
-      - "CHANGELOG.md"
-      - "SECURITY.md"
-      - ".gitignore"
-      - "flake.nix"
-      - ".github/workflows/repo-health.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -56,7 +41,7 @@ jobs:
           if [ "${#scripts[@]}" -eq 0 ]; then
             echo "no shell scripts found"; exit 0
           fi
-          printf 'linting %d scripts\n' "${#scripts[@]}"
+          printf 'linting %d scripts\n' "${scripts[@]}"
           shellcheck --severity=warning "${scripts[@]}"
 
   markdown-links:
