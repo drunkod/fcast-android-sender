@@ -1,11 +1,12 @@
 # StreamPack Migration Plan — adapted to the FCast Android sender codebase
 
-> **Status:** design doc. **Nothing in this file has been applied to the codebase.**
-> It is the implementation contract; each phase below is independently shippable.
+> **Status:** Phase 1 implementation is present on `main`; on-device validation is
+> still required. Steps 08+ remain planned and are blocked on that result. See the
+> [current roadmap](../plans/README.md).
 >
-> Reference implementation cloned to: `draft/StreamPack-boilerplate/`
+> Local reference implementation (when available): `draft/StreamPack-boilerplate/`
 > (pins `io.github.thibaultbee.streampack:* = 3.1.1`, the version the API surface below
-> was verified against). **The app now targets the latest `3.1.2`** — re-verify the
+> was verified against). **The app targets `3.1.2`** — re-verify the
 > version-sensitive bits (`SingleStreamer` construction, `VideoConfig.bitrate`, endpoint
 > `Frame`) on the bump; see §15.
 >

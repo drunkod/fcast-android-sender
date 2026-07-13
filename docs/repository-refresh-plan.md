@@ -1,6 +1,6 @@
 # Repository Refresh Plan — `fcast-android-sender`
 
-> **Status:** Proposed · **Owner:** maintainers · **Last verified against `main`:** 2026-06-15
+> **Status:** Completed · **Owner:** maintainers · **Last verified against `main`:** 2026-07-13
 >
 > This is the consolidated, fact-checked plan that supersedes the two earlier
 > drafts (`repository-refresh-plan.md` and `draft-plan-refresh-repo.md`). It folds
@@ -8,6 +8,8 @@
 > [Audit corrections](#1-audit-corrections)), and ships with executable tooling:
 > [`scripts/check-repo-layout.sh`](../scripts/check-repo-layout.sh) and
 > [`.github/workflows/repo-health.yml`](../.github/workflows/repo-health.yml).
+> The refresh landed in PR #27. The repo-health workflow remains available for
+> manual dispatch, but automatic push/pull-request triggers are currently disabled.
 
 ## Detailed split docs
 
